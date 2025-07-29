@@ -1,0 +1,29 @@
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: cluster-policy
+spec:
+  operator:
+    defaultRuntime: containerd
+    use_ocp_driver_toolkit: true
+  driver:
+    enabled: true
+    use_ocp_driver_toolkit: true
+  toolkit:
+    enabled: true
+  devicePlugin:
+    enabled: true
+  dcgm:
+    enabled: true
+  dcgmExporter:
+    enabled: true
+  gfd:
+    enabled: true
+  mig:
+    enabled: false
+  validator:
+    enabled: true
+  daemonsets:
+    enabled: true
+  nodeStatusExporter:
+    enabled: true

@@ -1,0 +1,377 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-prefill
+  namespace: llm-d-demo
+  labels:
+    app: vllm-prefill
+    variant: prefill
+    demo-role: disaggregated
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vllm-prefill
+      variant: prefill
+  template:
+    metadata:
+      labels:
+        app: vllm-prefill
+        variant: prefill
+        demo-role: disaggregated
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      containers:
+      - name: vllm-prefill
+        image: vllm/vllm-openai:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8001
+          name: rpc
+        env:
+        - name: MODEL_NAME
+          value: "meta-llama/Llama-3.1-8B-Instruct"
+        - name: TENSOR_PARALLEL_SIZE
+          value: "1"
+        - name: MAX_MODEL_LEN
+          value: "16384"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.85"
+        - name: TRUST_REMOTE_CODE
+          value: "true"
+        - name: SERVED_MODEL_NAME
+          value: "llama-3.1-8b-prefill"
+        - name: DISAGGREGATED_PREFILL_MODE
+          value: "true"
+        - name: KV_CONNECTOR_TYPE
+          value: "raylet"
+        - name: NIXL_ENABLED
+          value: "true"
+        command:
+        - python
+        - -m
+        - vllm.entrypoints.disaggregated_server
+        args:
+        - --model=$(MODEL_NAME)
+        - --served-model-name=$(SERVED_MODEL_NAME)
+        - --host=0.0.0.0
+        - --port=8000
+        - --rpc-port=8001
+        - --tensor-parallel-size=$(TENSOR_PARALLEL_SIZE)
+        - --max-model-len=$(MAX_MODEL_LEN)
+        - --gpu-memory-utilization=$(GPU_MEMORY_UTILIZATION)
+        - --trust-remote-code
+        - --disaggregated-prefill
+        - --kv-connector=$(KV_CONNECTOR_TYPE)
+        - --enable-nixl
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /root/.cache/huggingface
+        - name: kv-cache
+          mountPath: /tmp/kv_cache
+        resources:
+          requests:
+            memory: "24Gi"
+            cpu: "8"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "48Gi"
+            cpu: "16"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: hf-cache
+        emptyDir:
+          sizeLimit: 50Gi
+      - name: kv-cache
+        emptyDir:
+          sizeLimit: 30Gi
+      imagePullSecrets:
+      - name: hf-secret
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-decode
+  namespace: llm-d-demo
+  labels:
+    app: vllm-decode
+    variant: decode
+    demo-role: disaggregated
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: vllm-decode
+      variant: decode
+  template:
+    metadata:
+      labels:
+        app: vllm-decode
+        variant: decode
+        demo-role: disaggregated
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      nodeSelector:
+        nvidia.com/gpu: "true"
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Equal
+        value: "true"
+        effect: NoSchedule
+      containers:
+      - name: vllm-decode
+        image: vllm/vllm-openai:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8001
+          name: rpc
+        env:
+        - name: MODEL_NAME
+          value: "meta-llama/Llama-3.1-8B-Instruct"
+        - name: TENSOR_PARALLEL_SIZE
+          value: "1"
+        - name: MAX_MODEL_LEN
+          value: "16384"
+        - name: GPU_MEMORY_UTILIZATION
+          value: "0.75"
+        - name: TRUST_REMOTE_CODE
+          value: "true"
+        - name: SERVED_MODEL_NAME
+          value: "llama-3.1-8b-decode"
+        - name: DISAGGREGATED_DECODE_MODE
+          value: "true"
+        - name: KV_CONNECTOR_TYPE
+          value: "raylet"
+        - name: NIXL_ENABLED
+          value: "true"
+        - name: PREFILL_ENDPOINTS
+          value: "vllm-prefill.llm-d-demo.svc.cluster.local:8001"
+        command:
+        - python
+        - -m
+        - vllm.entrypoints.disaggregated_server
+        args:
+        - --model=$(MODEL_NAME)
+        - --served-model-name=$(SERVED_MODEL_NAME)
+        - --host=0.0.0.0
+        - --port=8000
+        - --rpc-port=8001
+        - --tensor-parallel-size=$(TENSOR_PARALLEL_SIZE)
+        - --max-model-len=$(MAX_MODEL_LEN)
+        - --gpu-memory-utilization=$(GPU_MEMORY_UTILIZATION)
+        - --trust-remote-code
+        - --disaggregated-decode
+        - --kv-connector=$(KV_CONNECTOR_TYPE)
+        - --enable-nixl
+        - --prefill-endpoints=$(PREFILL_ENDPOINTS)
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /root/.cache/huggingface
+        - name: kv-cache
+          mountPath: /tmp/kv_cache
+        resources:
+          requests:
+            memory: "32Gi"
+            cpu: "4"
+            nvidia.com/gpu: 1
+          limits:
+            memory: "64Gi"
+            cpu: "8"
+            nvidia.com/gpu: 1
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      volumes:
+      - name: hf-cache
+        emptyDir:
+          sizeLimit: 50Gi
+      - name: kv-cache
+        emptyDir:
+          sizeLimit: 40Gi
+      imagePullSecrets:
+      - name: hf-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-prefill
+  namespace: llm-d-demo
+  labels:
+    app: vllm-prefill
+    variant: prefill
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: vllm-prefill
+    variant: prefill
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  - name: rpc
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-decode
+  namespace: llm-d-demo
+  labels:
+    app: vllm-decode
+    variant: decode
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: vllm-decode
+    variant: decode
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  - name: rpc
+    port: 8001
+    targetPort: 8001
+    protocol: TCP
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-prefill-hpa
+  namespace: llm-d-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm-prefill
+  minReplicas: 1
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: prefill_queue_length
+      target:
+        type: AverageValue
+        averageValue: "5"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 180
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 120
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: vllm-decode-hpa
+  namespace: llm-d-demo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: vllm-decode
+  minReplicas: 2
+  maxReplicas: 12
+  metrics:
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 75
+  - type: Pods
+    pods:
+      metric:
+        name: decode_queue_length
+      target:
+        type: AverageValue
+        averageValue: "8"
+  - type: Pods
+    pods:
+      metric:
+        name: tokens_per_second
+      target:
+        type: AverageValue
+        averageValue: "50"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+      - type: Percent
+        value: 75
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 180 

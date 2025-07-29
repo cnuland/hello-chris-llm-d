@@ -1,0 +1,17 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: llm-d-inference
+  namespace: llm-d-demo
+  labels:
+    app: llm-d-demo
+spec:
+  port:
+    targetPort: 8080
+  to:
+    kind: Service
+    name: llm-d-scheduler
+    weight: 100
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

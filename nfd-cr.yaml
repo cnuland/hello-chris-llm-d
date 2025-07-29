@@ -1,0 +1,17 @@
+apiVersion: nfd.openshift.io/v1
+kind: NodeFeatureDiscovery
+metadata:
+  name: nfd-instance
+  namespace: openshift-nfd
+spec:
+  operand:
+    namespace: openshift-nfd
+  instance: ""
+  workerConfig:
+    configData: |
+      core:
+        labelSources: ["pci"]
+      sources:
+        pci:
+          deviceClassWhitelist: ["0300", "0302"]
+          deviceLabelFields: ["class", "vendor"]

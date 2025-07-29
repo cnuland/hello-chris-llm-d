@@ -1,0 +1,10 @@
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: gateway-api-operator
+  namespace: envoy-gateway-system
+spec:
+  channel: alpha
+  name: gateway-api-operator
+  source: community-operators
+  sourceNamespace: openshift-marketplace

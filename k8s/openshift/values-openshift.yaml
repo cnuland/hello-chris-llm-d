@@ -1,0 +1,21 @@
+gateway:
+  enabled: false
+
+ingress:
+  enabled: false
+
+modelservice:
+  gateway:
+    enabled: false  # Disable Gateway API features
+  routing:
+    type: openshift  # Use OpenShift routing
+  prefill:
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+  decode:
+    tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule

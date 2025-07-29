@@ -1,0 +1,23 @@
+global:
+  security:
+    allowInsecureImages: true
+
+modelservice:
+  enabled: true
+
+sampleApplication:
+  enabled: true
+  model:
+    modelArtifactURI: hf://meta-llama/Llama-3.2-3B-Instruct
+    modelName: "meta-llama/Llama-3.2-3B-Instruct"
+  resources:
+    limits:
+      nvidia.com/gpu: "1"
+    requests:
+      nvidia.com/gpu: "1"
+
+gateway:
+  enabled: true  # Enable Envoy Gateway
+
+ingress:
+  enabled: false  # Disable default ingress since we're using OpenShift Routes

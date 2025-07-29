@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jaeger
+  namespace: llm-d
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger
+  namespace: llm-d
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+  template:
+    metadata:
+      labels:
+        app: jaeger
+    spec:
+      serviceAccountName: jaeger
+      containers:
+      - name: jaeger
+        image: jaegertracing/all-in-one:latest
+        ports:
+        - containerPort: 16686
+          name: ui
+        - containerPort: 9411
+          name: zipkin
+        env:
+        - name: COLLECTOR_ZIPKIN_HOST_PORT
+          value: :9411
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger
+  namespace: llm-d
+spec:
+  ports:
+  - port: 16686
+    protocol: TCP
+    targetPort: ui
+    name: ui
+  - port: 9411
+    protocol: TCP
+    targetPort: zipkin
+    name: zipkin
+  selector:
+    app: jaeger
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: jaeger
+  namespace: llm-d
+spec:
+  port:
+    targetPort: ui
+  to:
+    kind: Service
+    name: jaeger

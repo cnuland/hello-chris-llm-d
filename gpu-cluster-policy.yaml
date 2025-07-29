@@ -1,0 +1,30 @@
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: cluster-policy
+spec:
+  driver:
+    use_ocp_driver_toolkit: true
+    driver_toolkit_image: "driver-toolkit"
+  operator:
+    defaultRuntime: crio
+  devicePlugin:
+    config:
+      name: "gpu-feature-discovery"
+      default: "any"
+  migManager:
+    enabled: true
+  gfd:
+    enabled: true
+  dcgm:
+    enabled: true
+  dcgmExporter:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  nodeStatusExporter:
+    enabled: true
+  validator:
+    enabled: true
+  toolkit:
+    enabled: true

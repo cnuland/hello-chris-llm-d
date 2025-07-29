@@ -88,15 +88,17 @@ export HF_TOKEN=<your-token>
 oc create secret generic hf-token --from-literal=token=$HF_TOKEN
 ```
 
-3. Created custom values file (values-openshift.yaml) to disable Istio/Gateway requirements:
+3. Created custom values file (values-openshift.yaml) for OpenShift-specific configuration:
 ```yaml
 gateway:
-  enabled: false
+  enabled: false  # Disable external gateway
 
 ingress:
-  enabled: false
+  enabled: false  # Disable Kubernetes ingress
 
 modelservice:
+  routing:
+    type: openshift  # Use OpenShift routing
   prefill:
     tolerations:
       - key: nvidia.com/gpu
