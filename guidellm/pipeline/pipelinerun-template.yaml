@@ -1,0 +1,32 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: guidellm-benchmark-
+  namespace: llm-d
+spec:
+  pipelineRef:
+    name: guidellm-benchmark-pipeline
+  params:
+    - name: target
+      value: "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000"
+    - name: model
+      value: "meta-llama/Llama-3.2-1B"
+    - name: processor
+      value: ""
+    - name: data
+      value: 'synthetic:count=10'
+    - name: rate-type
+      value: "synchronous"
+  workspaces:
+    - name: shared-workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
+  taskRunTemplate:
+    serviceAccountName: pipeline
+  timeouts:
+    pipeline: "1h0m0s"

@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vllm-load-test
+  namespace: llm-d
+spec:
+  template:
+    spec:
+      containers:
+      - name: load-test
+        image: curlimages/curl:latest
+        command: ["/bin/sh"]
+        args:
+        - -c
+        - |
+          echo "Starting load test..."
+          for i in $(seq 1 20); do
+            echo "Request $i"
+            curl -s -X POST "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000/v1/completions" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"Test request $i\", \"max_tokens\": 5}" \
+              -w "Status: %{http_code}, Time: %{time_total}s\n" || echo "Request $i failed"
+            sleep 2
+          done
+          echo "Load test completed"
+      restartPolicy: Never
+  backoffLimit: 3

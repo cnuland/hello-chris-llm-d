@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- base
+- monitoring
+
+# Namespace for all resources
+namespace: llm-d
+
+# Common labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: llm-d-vllm
+  app.kubernetes.io/component: inference-service
+  app.kubernetes.io/part-of: llm-d
+
+# Patches to remove cluster-specific configurations
+patchesStrategicMerge:
+- patches/remove-cluster-specific.yaml
+
+# Configuration replacements
+replacements:
+- source:
+    kind: Service
+    name: llama-3-2-1b-decode-service
+    fieldPath: metadata.name
+  targets:
+  - select:
+      kind: HTTPRoute
+      name: llama-3-2-1b-http-route
+    fieldPaths:
+    - spec.rules.0.backendRefs.0.name

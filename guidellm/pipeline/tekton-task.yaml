@@ -1,0 +1,73 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations: {}
+  name: guidellm-benchmark
+  namespace: llm-d
+spec:
+  params:
+    - description: Target endpoint URL
+      name: target
+      type: string
+    - description: Model identifier
+      name: model
+      type: string
+    - description: Processor/model path
+      name: processor
+      type: string
+    - description: JSON data configuration
+      name: data
+      type: string
+    - default: synchronous
+      description: Rate type (async/sweep/throughput/poisson/constant/synchronous/concurrent)
+      name: rate-type
+      type: string
+  steps:
+    - command:
+        - guidellm
+        - benchmark
+        - --target
+        - $(params.target)
+        - --model
+        - $(params.model)
+        - --processor
+        - $(params.processor)
+        - --data
+        - $(params.data)
+        - --rate-type
+        - $(params.rate-type)
+      computeResources: {}
+      env:
+        - name: TARGET
+          value: $(params.target)
+        - name: MODEL
+          value: $(params.model)
+        - name: PROCESSOR
+          value: $(params.processor)
+        - name: DATA
+          value: $(params.data)
+        - name: OUTPUT_DIR
+          value: $(workspaces.shared-workspace.path)
+        - name: PYTHONPATH
+          value: /opt/app-root/guidellm/lib64/python3.12/site-packages
+        - name: SETTINGS_FILE_ENV_EXTENSIONS
+        - name: SETTINGS_FILE_ENV_REQUIRED
+          value: "false"
+      image: quay.io/rh-aiservices-bu/guidellm:latest
+      name: run-benchmark
+      volumeMounts:
+        - mountPath: /opt/app-root/src/.cache
+          name: cache-volume
+        - mountPath: /opt/app-root/src/.env
+          name: env-volume
+          subPath: .env
+      workingDir: /opt/app-root/src
+  volumes:
+    - emptyDir: {}
+      name: cache-volume
+    - configMap:
+        name: guidellm-env
+      name: env-volume
+  workspaces:
+    - description: Workspace for output
+      name: shared-workspace

@@ -1,0 +1,25 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  annotations: {}
+  name: llama-3-2-1b-http-route
+  namespace: llm-d
+spec:
+  hostnames:
+    - llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm-d-gateway
+      namespace: llm-d
+  rules:
+    - backendRefs:
+        - group: ""
+          kind: Service
+          name: llama-3-2-1b-decode-service
+          port: 8000
+          weight: 1
+      matches:
+        - path:
+            type: PathPrefix
+            value: /v1

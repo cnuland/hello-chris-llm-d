@@ -1,9 +1,10 @@
 # llm-d Demo: Kubernetes-Native Distributed LLM Inference
 
-This repository contains a comprehensive demonstration of llm-d, a Kubernetes-native high-performance distributed LLM inference framework that showcases advanced features like KV-cache aware routing, disaggregated serving, and intelligent load balancing through Envoy Gateway integration.
+This repository contains a comprehensive demonstration of llm-d, a Kubernetes-native high-performance distributed LLM inference framework that showcases advanced features like KV-cache aware routing, disaggregated serving, and intelligent load balancing through Istio Gateway integration.
 
 ## 🚀 Quick Start
 
+### Option 1: Demo Environment (Recommended)
 Deploy the complete demo environment with a single command:
 
 ```bash
@@ -12,7 +13,38 @@ chmod +x deploy-demo.sh
 ./deploy-demo.sh deploy
 ```
 
-Access the demo at the provided URL after deployment completes.
+### Option 2: Production Deployment using llm-d-infra
+For production deployments, use the modular [llm-d-infra](https://github.com/llm-d-incubation/llm-d-infra) approach:
+
+```bash
+# Install llm-d-infra using Helmfile
+git clone https://github.com/llm-d-incubation/llm-d-infra.git
+cd llm-d-infra/quickstart
+
+# Run the installer script
+./llmd-infra-installer.sh
+
+# Deploy a specific example (e.g., simple)
+cd examples/simple
+helmfile sync
+```
+
+The llm-d-infra approach provides:
+- **Modular Components**: Choose which components to deploy (EPP, prefill/decode, monitoring)
+- **Helmfile Management**: Flexible configuration and composition
+- **Production Ready**: Upstream GIE chart compatibility
+- **Composable Architecture**: Mix and match components as needed
+
+### Option 3: Asset-Based Deployment
+Use the pre-configured assets in this repository:
+
+```bash
+# Deploy core infrastructure
+kubectl apply -k assets/
+
+# Deploy GuideLLM benchmarking
+kubectl apply -k guidellm/
+```
 
 ## 📋 Prerequisites
 
@@ -51,6 +83,33 @@ Access the demo at the provided URL after deployment completes.
                                               │  Jaeger)        │
                                               └─────────────────┘
 ```
+
+## ✨ Recent Updates & Improvements
+
+This demonstration includes several production-ready improvements and fixes:
+
+### 🌐 Network and Routing Fixes
+- **HTTPRoute Resolution**: Fixed 503 errors by updating HTTPRoute to use ClusterIP service instead of headless service
+- **TLS Termination**: Configured proper HTTPS access through OpenShift Route with edge termination
+- **Service Mesh Integration**: Improved Istio Gateway configuration for reliable traffic routing
+
+### 📈 Enhanced Monitoring & Observability
+- **Metrics Exposure**: Added ServiceMonitor and PodMonitor for comprehensive vLLM metrics collection
+- **Prometheus Integration**: Configured namespace labeling for OpenShift cluster monitoring integration
+- **Rich Telemetry**: Exposed 384+ vLLM-specific metrics including request rates, token processing, and cache analytics
+
+### 🛠️ Benchmarking & Load Testing
+- **GuideLLM Integration**: Complete Tekton pipeline setup for automated LLM benchmarking
+- **Multiple Deployment Options**: Both Tekton Pipeline and standalone Kubernetes Job implementations
+- **Validated Configurations**: Production-tested parameters that avoid common pitfalls
+- **Automated Testing**: Load generation scripts with comprehensive validation
+
+### 📦 Production-Ready Assets
+- **Kustomize Organization**: Well-structured asset directories for infrastructure and monitoring
+- **Clean Configurations**: Cluster-agnostic manifests ready for deployment anywhere
+- **Comprehensive Documentation**: Detailed guides, troubleshooting, and test scripts
+
+All improvements are based on real production challenges and have been thoroughly tested in OpenShift environments.
 
 ## ✨ Key Features Demonstrated
 
@@ -210,7 +269,83 @@ cd frontend && npm test
 ./scripts/test-integration.sh
 ```
 
-## 🔧 Configuration
+## 📦 Deployment Assets
+
+### Assets Directory Structure
+
+The `/assets` directory contains production-ready Kubernetes manifests organized with Kustomize for easy deployment:
+
+```
+assets/
+├── base/                           # Core infrastructure components
+│   ├── deployment.yaml             # vLLM deployment configuration
+│   ├── service.yaml                # ClusterIP service for load balancing
+│   ├── httproute.yaml              # Gateway routing configuration
+│   ├── gateway.yaml                # Istio Gateway resource
+│   └── route.yaml                  # OpenShift Route with TLS
+├── monitoring/                     # Observability stack
+│   ├── servicemonitor.yaml         # Prometheus ServiceMonitor
+│   ├── podmonitor.yaml             # Prometheus PodMonitor
+│   └── metrics-service.yaml        # Metrics exposure service
+├── load-testing/                   # Load testing resources
+│   └── load-test-job.yaml          # Kubernetes Job for load testing
+└── kustomization.yaml              # Main Kustomize configuration
+```
+
+### GuideLLM Benchmarking Suite
+
+The `guidellm/` directory provides comprehensive LLM benchmarking capabilities:
+
+```
+guidellm/
+├── README.md                       # Complete deployment guide
+├── pipeline/                       # Tekton Pipeline resources
+│   ├── tekton-task.yaml           # GuideLLM benchmark task
+│   ├── tekton-pipeline.yaml       # Complete pipeline definition
+│   └── pipelinerun-template.yaml  # Working pipeline run template
+├── utils/                         # Supporting utilities  
+│   ├── pvc.yaml                   # Persistent storage for results
+│   ├── guidellm-job.yaml          # Standalone Kubernetes job
+│   └── serviceaccount.yaml        # RBAC configuration
+├── configs/                       # Configuration management
+│   ├── config.yaml                # GuideLLM settings
+│   └── env-config.yaml            # Environment variables
+├── test-deployment.sh             # Validation and testing script
+└── kustomization.yaml             # Kustomize deployment config
+```
+
+### Quick Deployment Commands
+
+**Deploy Core Infrastructure:**
+```bash
+# Deploy all base components
+kubectl apply -k assets/
+
+# Deploy only monitoring
+kubectl apply -k assets/monitoring/
+```
+
+**Deploy GuideLLM Benchmarking:**
+```bash
+# Deploy all GuideLLM resources
+kubectl apply -k guidellm/
+
+# Test the deployment
+./guidellm/test-deployment.sh
+
+# Run a benchmark
+kubectl create -f guidellm/pipeline/pipelinerun-template.yaml
+```
+
+**Validated Configuration:**
+Based on production testing, this configuration works reliably:
+- **Target**: `http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000`
+- **Model**: `meta-llama/Llama-3.2-1B`
+- **Processor**: `""` (empty for synthetic data)
+- **Data**: `synthetic:count=10`
+- **Rate Type**: `synchronous`
+
+## 🛠️ Configuration
 
 ### Environment Variables
 ```bash

@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: run-guidellm
+  namespace: llm-d
+spec:
+  template:
+    spec:
+      containers:
+      - name: guidellm
+        image: quay.io/rh-aiservices-bu/guidellm:latest
+        env:
+        - name: TARGET
+          value: "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000"
+        - name: MODEL_NAME
+          value: "meta-llama/Llama-3.2-1B"
+        - name: PROCESSOR
+          value: ""
+        - name: DATA_CONFIG
+          value: 'synthetic:count=10'
+        - name: OUTPUT_FILENAME
+          value: "benchmark-results"
+        - name: RATE_TYPE
+          value: "synchronous"
+        - name: MAX_SECONDS
+          value: "300"
+        - name: PYTHONPATH
+          value: "/opt/app-root/guidellm/lib64/python3.12/site-packages"
+        - name: SETTINGS_FILE_ENV_EXTENSIONS
+          value: ""
+        - name: SETTINGS_FILE_ENV_REQUIRED
+          value: "false"
+        command:
+        - guidellm
+        - benchmark
+        - --target
+        - $(TARGET)
+        - --model
+        - $(MODEL_NAME)
+        - --processor
+        - $(PROCESSOR)
+        - --data
+        - $(DATA_CONFIG)
+        - --rate-type
+        - $(RATE_TYPE)
+        - --output-filename
+        - $(OUTPUT_FILENAME)
+        - --max-seconds
+        - $(MAX_SECONDS)
+        volumeMounts:
+        - name: guidellm-output
+          mountPath: /opt/app-root/src/output
+        - name: cache-volume
+          mountPath: /opt/app-root/src/.cache
+        workingDir: /opt/app-root/src
+      volumes:
+      - name: guidellm-output
+        persistentVolumeClaim:
+          claimName: guidellm-output-pvc
+      - name: cache-volume
+        emptyDir: {}
+      restartPolicy: Never
+  backoffLimit: 3

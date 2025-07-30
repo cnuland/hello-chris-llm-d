@@ -1,0 +1,4 @@
+resources:
+  - metrics-service.yaml
+  - servicemonitor.yaml
+  - podmonitor.yaml

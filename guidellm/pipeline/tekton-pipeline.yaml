@@ -1,0 +1,46 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  annotations: {}
+  name: guidellm-benchmark-pipeline
+  namespace: llm-d
+spec:
+  params:
+    - description: Target endpoint URL
+      name: target
+      type: string
+    - description: Model identifier
+      name: model
+      type: string
+    - description: Processor/model path
+      name: processor
+      type: string
+    - description: JSON data configuration
+      name: data
+      type: string
+    - default: synchronous
+      description: Rate type (async/sweep/throughput/poisson/constant/synchronous/concurrent)
+      name: rate-type
+      type: string
+  tasks:
+    - name: run-benchmark
+      params:
+        - name: target
+          value: $(params.target)
+        - name: model
+          value: $(params.model)
+        - name: processor
+          value: $(params.processor)
+        - name: data
+          value: $(params.data)
+        - name: rate-type
+          value: $(params.rate-type)
+      taskRef:
+        kind: Task
+        name: guidellm-benchmark
+      workspaces:
+        - name: shared-workspace
+          workspace: shared-workspace
+  workspaces:
+    - description: Workspace for output
+      name: shared-workspace

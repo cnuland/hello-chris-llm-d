@@ -1,0 +1,2 @@
+# This file is intentionally empty but required by kustomization.yaml
+# The actual cleanup is done via yq commands on the exported YAML files

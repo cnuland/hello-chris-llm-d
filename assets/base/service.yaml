@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  annotations: {}
+  labels:
+    llm-d.ai/model: llama-3-2-1b
+    llm-d.ai/role: decode
+  name: llama-3-2-1b-decode-service
+  namespace: llm-d
+spec:
+  clusterIP: 172.30.18.160
+  clusterIPs:
+    - 172.30.18.160
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - name: vllm
+      port: 8000
+      protocol: TCP
+      targetPort: 8000
+    - name: nixl
+      port: 5557
+      protocol: TCP
+      targetPort: 5557
+  selector:
+    llm-d.ai/inferenceServing: "true"
+    llm-d.ai/model: llama-3-2-1b
+    llm-d.ai/role: decode
+  sessionAffinity: None
+  type: ClusterIP
