@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-3-2-1b-prefill
+  namespace: llm-d
+  labels:
+    llm-d.ai/inferenceServing: "true"
+    llm-d.ai/model: llama-3-2-1b
+    llm-d.ai/role: prefill
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      llm-d.ai/inferenceServing: "true"
+      llm-d.ai/model: llama-3-2-1b
+      llm-d.ai/role: prefill
+  template:
+    metadata:
+      labels:
+        llm-d.ai/inferenceServing: "true"
+        llm-d.ai/model: llama-3-2-1b
+        llm-d.ai/role: prefill
+    spec:
+      serviceAccountName: llama-3-2-1b-sa
+      containers:
+      - name: vllm
+        image: ghcr.io/llm-d/llm-d:0.0.8
+        command:
+        - vllm
+        args:
+        - serve
+        - meta-llama/Llama-3.2-1B
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8000" 
+        - --enable-prefix-caching
+        - --prefix-caching-hash-algo
+        - sha256
+        - --kv-transfer-config
+        - '{"kv_connector":"NixlConnector","kv_role":"kv_both"}'
+        env:
+        - name: HOME
+          value: /home
+        - name: VLLM_LOGGING_LEVEL
+          value: INFO
+        - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+          value: "5557"
+        - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        - name: UCX_TLS
+          value: ^cuda_ipc
+        - name: PYTHONHASHSEED
+          value: "42"
+        - name: HF_HUB_CACHE
+          value: /models
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: HF_TOKEN
+              name: llm-d-hf-token
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        - containerPort: 5557
+          name: nixl
+          protocol: TCP
+        livenessProbe:
+          tcpSocket:
+            port: 8000
+          periodSeconds: 5
+          timeoutSeconds: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          periodSeconds: 5
+          timeoutSeconds: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 60
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+          requests:
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - mountPath: /home
+          name: home
+        - mountPath: /dev/shm
+          name: dshm
+        - mountPath: /models
+          name: model-cache
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: In
+                values:
+                - "true"
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Exists
+      volumes:
+      - name: home
+        emptyDir: {}
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      - name: model-cache
+        emptyDir:
+          sizeLimit: 50Gi

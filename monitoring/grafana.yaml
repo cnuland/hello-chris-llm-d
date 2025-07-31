@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: grafana
-  namespace: llm-d
+  namespace: llm-d-monitoring
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-config
-  namespace: llm-d
+  namespace: llm-d-monitoring
 data:
   grafana.ini: |
     [auth.anonymous]
@@ -19,12 +19,159 @@ data:
     [security]
     admin_user = admin
     admin_password = admin
+    [paths]
+    data = /var/lib/grafana
+    logs = /var/log/grafana
+    plugins = /var/lib/grafana/plugins
+    provisioning = /etc/grafana/provisioning
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-llm-performance
+  namespace: llm-d-monitoring
+data:
+  llm-performance-dashboard.json: |
+    {
+      "annotations": {
+        "list": [
+          {
+            "builtIn": 1,
+            "datasource": {
+              "type": "grafana",
+              "uid": "-- Grafana --"
+            },
+            "enable": true,
+            "hide": true,
+            "iconColor": "rgba(0, 211, 255, 1)",
+            "name": "Annotations & Alerts",
+            "type": "dashboard"
+          }
+        ]
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "description": "Time to First Token (TTFT) - Critical latency metric",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "vis": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "legend": {
+              "calcs": [
+                "lastNotNull",
+                "mean"
+              ],
+              "displayMode": "table",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "histogram_quantile(0.50, rate(vllm:time_to_first_token_seconds_bucket[5m]))",
+              "legendFormat": "P50 TTFT",
+              "refId": "A"
+            }
+          ],
+          "title": "Time to First Token (TTFT)",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 36,
+      "style": "dark",
+      "tags": [
+        "llm",
+        "vllm",
+        "performance",
+        "inference"
+      ],
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "title": "LLM Performance Dashboard",
+      "uid": "llm-performance",
+      "version": 1
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
-  namespace: llm-d
+  namespace: llm-d-monitoring
 spec:
   replicas: 1
   selector:
@@ -45,16 +192,31 @@ spec:
         - name: grafana-config
           mountPath: /etc/grafana/grafana.ini
           subPath: grafana.ini
+        - name: grafana-datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: grafana-dashboard-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        - name: grafana-dashboards
+          mountPath: /var/lib/grafana/dashboards
       volumes:
       - name: grafana-config
         configMap:
           name: grafana-config
+      - name: grafana-datasources
+        configMap:
+          name: grafana-datasources
+      - name: grafana-dashboard-config
+        configMap:
+          name: grafana-dashboards-config
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboard-llm-performance
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: grafana
-  namespace: llm-d
+  namespace: llm-d-monitoring
 spec:
   ports:
   - port: 3000
@@ -67,7 +229,7 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: grafana
-  namespace: llm-d
+  namespace: llm-d-monitoring
 spec:
   port:
     targetPort: 3000

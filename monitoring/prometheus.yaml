@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: prometheus
-  namespace: llm-d
+  namespace: llm-d-monitoring
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -36,13 +36,13 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: prometheus
-  namespace: llm-d
+  namespace: llm-d-monitoring
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus-config
-  namespace: llm-d
+  namespace: llm-d-monitoring
 data:
   prometheus.yml: |
     global:
@@ -131,20 +131,23 @@ data:
           names:
           - llm-d
       relabel_configs:
-      - source_labels: [__meta_kubernetes_service_label_app]
+      - source_labels: [__meta_kubernetes_service_label_llm_d_ai_model]
         action: keep
-        regex: 'vllm-.*'
+        regex: 'llama-.*'
       - source_labels: [__meta_kubernetes_endpoint_port_name]
         action: keep
-        regex: http
+        regex: vllm
       - source_labels: [__address__]
         action: replace
         regex: '([^:]+):.*'
         replacement: '${1}:8000'
         target_label: __address__
-      - source_labels: [__meta_kubernetes_service_label_variant]
+      - source_labels: [__meta_kubernetes_service_label_llm_d_ai_role]
         action: replace
-        target_label: vllm_variant
+        target_label: vllm_role
+      - source_labels: [__meta_kubernetes_service_label_llm_d_ai_model]
+        action: replace
+        target_label: vllm_model
         
     - job_name: 'envoy-gateway'
       kubernetes_sd_configs:
@@ -160,6 +163,56 @@ data:
       - source_labels: [__meta_kubernetes_endpoint_port_name]
         action: keep
         regex: 'metrics|admin'
+        
+    - job_name: 'gateway-api-inference-extension'
+      kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names:
+          - llm-d
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        action: keep
+        regex: '.*-epp-service'
+      - source_labels: [__meta_kubernetes_endpoint_port_name]
+        action: keep
+        regex: 'metrics'
+      - source_labels: [__address__]
+        action: replace
+        regex: '([^:]+):.*'
+        replacement: '${1}:9090'
+        target_label: __address__
+      - source_labels: [__meta_kubernetes_service_label_llm_d_ai_epp]
+        action: replace
+        target_label: inference_extension
+        
+    - job_name: 'llm-d-components'
+      kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+          - llm-d
+      relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
   
   inference_rules.yml: |
     groups:
@@ -214,7 +267,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: prometheus
-  namespace: llm-d
+  namespace: llm-d-monitoring
   labels:
     app: prometheus
 spec:
@@ -275,7 +328,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: prometheus
-  namespace: llm-d
+  namespace: llm-d-monitoring
   labels:
     app: prometheus
   annotations:

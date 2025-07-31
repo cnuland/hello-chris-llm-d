@@ -88,15 +88,24 @@ kubectl apply -k guidellm/
 
 This demonstration includes several production-ready improvements and fixes:
 
+### 🔧 Metrics Collection & Monitoring (RESOLVED)
+- **ServiceMonitor & PodMonitor**: Fixed comprehensive vLLM metrics collection with proper port configurations
+- **Service Port Mapping**: Resolved decode pod port conflicts between routing proxy (8000) and vLLM (8001)
+- **Prometheus Integration**: Successfully configured metrics collection in `llm-d-monitoring` namespace
+- **Cache Metrics**: Working prefix cache hit rate monitoring with `vllm:gpu_prefix_cache_*` metrics
+- **P/D Disaggregation**: Full prefill/decode separation with proper EPP routing through Gateway API
+
 ### 🌐 Network and Routing Fixes
 - **HTTPRoute Resolution**: Fixed 503 errors by updating HTTPRoute to use ClusterIP service instead of headless service
 - **TLS Termination**: Configured proper HTTPS access through OpenShift Route with edge termination
 - **Service Mesh Integration**: Improved Istio Gateway configuration for reliable traffic routing
+- **ModelService CRD**: Declarative infrastructure management with proper service labeling
 
 ### 📈 Enhanced Monitoring & Observability
-- **Metrics Exposure**: Added ServiceMonitor and PodMonitor for comprehensive vLLM metrics collection
+- **Metrics Exposure**: Working ServiceMonitor and PodMonitor for comprehensive vLLM metrics collection
 - **Prometheus Integration**: Configured namespace labeling for OpenShift cluster monitoring integration
 - **Rich Telemetry**: Exposed 384+ vLLM-specific metrics including request rates, token processing, and cache analytics
+- **Real-time Debugging**: Created comprehensive debugging tools (`debug-metrics.sh`, `METRICS_DEBUG_GUIDE.md`)
 
 ### 🛠️ Benchmarking & Load Testing
 - **GuideLLM Integration**: Complete Tekton pipeline setup for automated LLM benchmarking
@@ -220,14 +229,31 @@ All improvements are based on real production challenges and have been thoroughl
 
 ## 📊 Monitoring and Observability
 
+### 🎯 Monitoring Setup
+- **Namespace**: All monitoring components (Grafana and Prometheus) are deployed in the `llm-d-monitoring` namespace
+- **Access URL**: https://grafana-llm-d-monitoring.apps.rhoai-cluster.qhxt.p1.openshiftapps.com
+- **Login Credentials**: `admin` / `admin` (demo environment)
+- **Dashboard**: LLM Performance Dashboard with comprehensive vLLM metrics
+
 ### Prometheus Metrics
 - **System Metrics**: CPU, memory, GPU utilization
 - **Application Metrics**: Request latency, throughput, error rates
+- **vLLM Metrics**: 384+ specialized metrics including:
+  - Time to First Token (TTFT) latency
+  - Inter-token latency and generation speed
+  - GPU cache utilization and hit rates
+  - Request queue management
+  - Token processing rates
 - **Custom Metrics**: Cache hit ratios, routing decisions, queue lengths
 - **Alerting**: SLA violations and system health alerts
 
 ### Grafana Dashboards
-- **llm-d Overview**: System-wide performance metrics
+- **LLM Performance Dashboard**: Comprehensive vLLM monitoring with:
+  - Time to First Token (TTFT) percentiles (P50, P95, P99)
+  - GPU cache utilization with color-coded thresholds
+  - KV cache hit rate efficiency metrics
+  - Request queue status and throughput
+  - Token processing rates and end-to-end latency
 - **Cache Analytics**: Prefix cache performance and optimization
 - **Gateway Health**: Envoy proxy metrics and routing decisions
 - **Model Performance**: Per-model latency and throughput analysis

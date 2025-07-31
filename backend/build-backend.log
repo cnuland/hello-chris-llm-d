@@ -1,0 +1,54 @@
+STEP 1/12: FROM docker.io/library/node:18-alpine
+STEP 2/12: WORKDIR /app
+--> Using cache 6169bb288c7a050438fc53a8195947fff8303a28c04f99c17a8dbfd53e767110
+--> 6169bb288c7a
+STEP 3/12: RUN apk add --no-cache curl
+fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/main/x86_64/APKINDEX.tar.gz
+fetch https://dl-cdn.alpinelinux.org/alpine/v3.21/community/x86_64/APKINDEX.tar.gz
+(1/9) Installing brotli-libs (1.1.0-r2)
+(2/9) Installing c-ares (1.34.5-r0)
+(3/9) Installing libunistring (1.2-r0)
+(4/9) Installing libidn2 (2.3.7-r0)
+(5/9) Installing nghttp2-libs (1.64.0-r0)
+(6/9) Installing libpsl (0.21.5-r3)
+(7/9) Installing zstd-libs (1.5.6-r2)
+(8/9) Installing libcurl (8.12.1-r1)
+(9/9) Installing curl (8.12.1-r1)
+Executing busybox-1.37.0-r12.trigger
+OK: 14 MiB in 26 packages
+--> 62b579af7eb6
+STEP 4/12: COPY package*.json ./
+--> dc14bcd66e15
+STEP 5/12: RUN npm install --omit=dev
+
+added 103 packages, and audited 104 packages in 24s
+
+18 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.5.2
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.5.2
+npm notice To update run: npm install -g npm@11.5.2
+npm notice
+--> c3322de8ef01
+STEP 6/12: COPY src/ ./src/
+--> 5e13d4c1e7fd
+STEP 7/12: RUN addgroup -g 1001 -S nodejs &&     adduser -S nodejs -u 1001
+--> ba14c548dcbd
+STEP 8/12: RUN chown -R nodejs:nodejs /app
+--> ddd4fc6e8d7a
+STEP 9/12: USER nodejs
+--> 77144ba27551
+STEP 10/12: EXPOSE 3001
+--> 37c9ff39d95c
+STEP 11/12: HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3   CMD curl -f http://localhost:3001/health || exit 1
+time="2025-07-30T21:55:37-04:00" level=warning msg="HEALTHCHECK is not supported for OCI image format and will be ignored. Must use `docker` format"
+--> 91e590a07616
+STEP 12/12: CMD ["npm", "start"]
+COMMIT quay.io/cnuland/llm-interface:backend-amd64
+time="2025-07-30T21:55:37-04:00" level=warning msg="HEALTHCHECK is not supported for OCI image format and will be ignored. Must use `docker` format"
+--> 7ea9c80929f6
+Successfully tagged quay.io/cnuland/llm-interface:backend-amd64
+7ea9c80929f6ec29c0365d44975938b383f996e6e689c7f2689467f55f44e32e

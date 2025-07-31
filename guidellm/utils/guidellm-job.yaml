@@ -17,7 +17,7 @@ spec:
         - name: PROCESSOR
           value: ""
         - name: DATA_CONFIG
-          value: 'synthetic:count=10'
+          value: 'synthetic'
         - name: OUTPUT_FILENAME
           value: "benchmark-results"
         - name: RATE_TYPE
@@ -37,16 +37,16 @@ spec:
         - $(TARGET)
         - --model
         - $(MODEL_NAME)
-        - --processor
-        - $(PROCESSOR)
         - --data
-        - $(DATA_CONFIG)
+        - '[{"messages": [{"role": "user", "content": "What is machine learning?"}]}]'
         - --rate-type
         - $(RATE_TYPE)
-        - --output-filename
-        - $(OUTPUT_FILENAME)
+        - --output-path
+        - /opt/app-root/src/output/
         - --max-seconds
         - $(MAX_SECONDS)
+        - --max-requests
+        - "10"
         volumeMounts:
         - name: guidellm-output
           mountPath: /opt/app-root/src/output

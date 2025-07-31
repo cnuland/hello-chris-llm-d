@@ -50,15 +50,16 @@ spec:
             - 0.0.0.0
             - --port
             - "8001"
-            - --kv-transfer-config
-            - '{"kv_connector":"MultiConnector","kv_role":"kv_both","kv_connector_extra_config":{"connectors":[{"kv_connector":"NixlConnector","kv_role":"kv_both"},{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}]}}'
+            - --enable-prefix-caching
+            - --prefix-caching-hash-algo
+            - sha256
           command:
             - vllm
           env:
             - name: HOME
               value: /home
             - name: VLLM_LOGGING_LEVEL
-              value: INFO
+              value: DEBUG
             - name: VLLM_NIXL_SIDE_CHANNEL_PORT
               value: "5557"
             - name: VLLM_NIXL_SIDE_CHANNEL_HOST
@@ -66,25 +67,10 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: status.podIP
-            - name: LMCACHE_DISTRIBUTED_URL
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: status.podIP
             - name: UCX_TLS
               value: ^cuda_ipc
-            - name: LMCACHE_ENABLE_DEBUG
-              value: "True"
-            - name: LMCACHE_LOCAL_CPU
-              value: "True"
-            - name: LMCACHE_MAX_LOCAL_CPU_SIZE
-              value: "5"
-            - name: LMCACHE_MAX_LOCAL_DISK_SIZE
-              value: "10"
-            - name: LMCACHE_CHUNK_SIZE
-              value: "256"
-            - name: LMCACHE_LOOKUP_URL
-              value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
+            - name: PYTHONHASHSEED
+              value: "42"
             - name: HF_HUB_CACHE
               value: /models
             - name: HF_TOKEN

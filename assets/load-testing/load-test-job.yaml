@@ -13,15 +13,37 @@ spec:
         args:
         - -c
         - |
-          echo "Starting load test..."
-          for i in $(seq 1 20); do
-            echo "Request $i"
+          echo "Starting comprehensive load test..."
+          echo "Test 1: Basic latency test (50 requests)"
+          for i in $(seq 1 50); do
             curl -s -X POST "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000/v1/completions" \
               -H "Content-Type: application/json" \
-              -d "{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"Test request $i\", \"max_tokens\": 5}" \
-              -w "Status: %{http_code}, Time: %{time_total}s\n" || echo "Request $i failed"
-            sleep 2
+              -d "{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"What is artificial intelligence? Explain in detail.\", \"max_tokens\": 50}" \
+              -w "Request $i - Status: %{http_code}, TTFB: %{time_starttransfer}s, Total: %{time_total}s\n"
+            sleep 1
           done
-          echo "Load test completed"
+          echo "Test 2: Variable prompt lengths (30 requests)"
+          PROMPTS=("Hello" "What is machine learning?" "Explain the concept of neural networks in detail and how they work." "Write a comprehensive essay about the history of computer science and its impact on modern society.")
+          for i in $(seq 1 30); do
+            PROMPT_IDX=$((i % 4))
+            curl -s -X POST "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000/v1/completions" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"${PROMPTS[$PROMPT_IDX]}\", \"max_tokens\": 100}" \
+              -w "Variable test $i - Status: %{http_code}, TTFB: %{time_starttransfer}s, Total: %{time_total}s\n"
+            sleep 0.5
+          done
+          echo "Test 3: Concurrent requests burst (20 requests)"
+          for i in $(seq 1 20); do
+            curl -s -X POST "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000/v1/completions" \
+              -H "Content-Type: application/json" \
+              -d "{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"Generate a creative story about technology.\", \"max_tokens\": 75}" \
+              -w "Burst $i - Status: %{http_code}, TTFB: %{time_starttransfer}s, Total: %{time_total}s\n" &
+            if [ $((i % 5)) -eq 0 ]; then
+              wait
+              sleep 2
+            fi
+          done
+          wait
+          echo "Load testing completed - Total: 100 requests generated"
       restartPolicy: Never
   backoffLimit: 3

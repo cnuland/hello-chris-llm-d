@@ -2,27 +2,29 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app.kubernetes.io/component: decode
-    llm-d.ai/model: llama-3-2-1b
-    llm-d.ai/role: decode
-  name: llama-3-2-1b-decode-metrics
+    app: llm-d
+    component: metrics
+  name: llm-d-metrics-aggregator
   namespace: llm-d
 spec:
-  clusterIP: 172.30.24.190
-  clusterIPs:
-    - 172.30.24.190
-  internalTrafficPolicy: Cluster
-  ipFamilies:
-    - IPv4
-  ipFamilyPolicy: SingleStack
   ports:
-    - name: metrics
+    # Prefill metrics (port 8000)
+    - name: prefill-metrics
       port: 8000
       protocol: TCP
       targetPort: 8000
+    # Decode metrics (port 8001)
+    - name: decode-metrics
+      port: 8001
+      protocol: TCP
+      targetPort: 8001
+    # EPP metrics (port 9090)
+    - name: epp-metrics
+      port: 9090
+      protocol: TCP
+      targetPort: 9090
   selector:
-    llm-d.ai/inferenceServing: "true"
-    llm-d.ai/model: llama-3-2-1b
-    llm-d.ai/role: decode
-  sessionAffinity: None
+    # This service will not select any pods directly
+    # Instead, PodMonitors will scrape pods directly
+    app: llm-d-metrics-placeholder
   type: ClusterIP

@@ -1,2 +1,4 @@
 resources:
-- load-test-job.yaml
+  - load-test-job.yaml
+  - prefix-cache-test-job.yaml
+  - guidellm-pd-test-job.yaml

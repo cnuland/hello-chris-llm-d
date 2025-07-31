@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-3-2-1b-epp
+  namespace: llm-d
+  labels:
+    app.kubernetes.io/gateway: llm-d-operator-inference-gateway
+    llm-d.ai/epp: llama-3-2-1b-epp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/gateway: llm-d-operator-inference-gateway
+      llm-d.ai/epp: llama-3-2-1b-epp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/gateway: llm-d-operator-inference-gateway
+        llm-d.ai/epp: llama-3-2-1b-epp
+    spec:
+      serviceAccountName: llama-3-2-1b-epp-sa
+      containers:
+      - name: epp
+        image: ghcr.io/llm-d/llm-d-inference-scheduler:v0.2.1
+        imagePullPolicy: Always
+        args:
+        - --poolName
+        - llama-3-2-1b-inference-pool
+        - --poolNamespace
+        - llm-d
+        - -v
+        - "4"
+        - --zap-encoder
+        - json
+        - --grpcPort
+        - "9002"
+        - --grpcHealthPort
+        - "9003"
+        - --plugins-config-file
+        - /etc/config/pd-config.yaml
+        env:
+        # Enable P/D Disaggregation - CRITICAL!
+        - name: PD_ENABLED
+          value: "true"
+        - name: PD_PROMPT_LEN_THRESHOLD
+          value: "10"
+        
+        # Decode phase scoring
+        - name: ENABLE_LOAD_AWARE_SCORER
+          value: "true"
+        - name: ENABLE_PREFIX_AWARE_SCORER
+          value: "true"
+        - name: ENABLE_KVCACHE_AWARE_SCORER
+          value: "false"
+        - name: ENABLE_SESSION_AWARE_SCORER
+          value: "false"
+        - name: LOAD_AWARE_SCORER_WEIGHT
+          value: "1"
+        - name: PREFIX_AWARE_SCORER_WEIGHT
+          value: "2"
+        - name: KVCACHE_AWARE_SCORER_WEIGHT
+          value: "1"
+        - name: SESSION_AWARE_SCORER_WEIGHT
+          value: "1"
+        
+        # Prefill phase scoring
+        - name: PREFILL_ENABLE_LOAD_AWARE_SCORER
+          value: "true"
+        - name: PREFILL_ENABLE_PREFIX_AWARE_SCORER
+          value: "true"
+        - name: PREFILL_ENABLE_KVCACHE_AWARE_SCORER
+          value: "false"
+        - name: PREFILL_ENABLE_SESSION_AWARE_SCORER
+          value: "false"
+        - name: PREFILL_LOAD_AWARE_SCORER_WEIGHT
+          value: "1"
+        - name: PREFILL_PREFIX_AWARE_SCORER_WEIGHT
+          value: "1"
+        - name: PREFILL_KVCACHE_AWARE_SCORER_WEIGHT
+          value: "1"
+        - name: PREFILL_SESSION_AWARE_SCORER_WEIGHT
+          value: "1"
+        
+        # Redis configuration (for future use)
+        - name: KVCACHE_INDEXER_REDIS_ADDR
+          value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
+        - name: PREFILL_KVCACHE_INDEXER_REDIS_ADDR
+          value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
+        
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: HF_TOKEN
+              name: llm-d-hf-token
+        ports:
+        - containerPort: 9002
+          name: grpc
+          protocol: TCP
+        - containerPort: 9003
+          name: grpc-health
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        livenessProbe:
+          grpc:
+            port: 9003
+            service: envoy.service.ext_proc.v3.ExternalProcessor
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+        readinessProbe:
+          grpc:
+            port: 9003
+            service: envoy.service.ext_proc.v3.ExternalProcessor
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 256m
+            memory: 500Mi
+        volumeMounts:
+        - name: pd-config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: pd-config
+        configMap:
+          name: llama-3-2-1b-epp-pd-config

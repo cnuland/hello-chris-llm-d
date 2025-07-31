@@ -3,13 +3,22 @@ kind: PodMonitor
 metadata:
   labels:
     app: llm-d
-  name: vllm-pod-metrics
+  name: llm-d-pod-metrics
   namespace: llm-d
 spec:
   podMetricsEndpoints:
+    # vLLM metrics from prefill pods (port 8000)
     - interval: 15s
       path: /metrics
-      port: http
+      port: "8000"
+    # vLLM metrics from decode pods (port 8001) 
+    - interval: 15s
+      path: /metrics
+      port: "8001"
+    # EPP metrics (port 9090)
+    - interval: 15s
+      path: /metrics
+      port: "9090"
   selector:
     matchLabels:
-      llm-d.ai/role: decode
+      llm-d.ai/inferenceServing: "true"

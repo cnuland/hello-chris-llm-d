@@ -1,0 +1,46 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    app: llm-d
+  name: llm-d-comprehensive-metrics
+  namespace: llm-d
+spec:
+  podMetricsEndpoints:
+    # Prefill pods - direct vLLM on port 8000
+    - interval: 15s
+      path: /metrics
+      port: "8000"
+    # Decode pods - vLLM on port 8001 (routing proxy on 8000)
+    - interval: 15s
+      path: /metrics
+      port: "8001"
+    # Also try routing proxy on port 8000 (might proxy /metrics)
+    - interval: 15s
+      path: /metrics
+      port: "8000"
+  selector:
+    matchExpressions:
+    # Match any pod with inference serving role
+    - key: llm-d.ai/inferenceServing
+      operator: In
+      values: ["true"]
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  labels:
+    app: llm-d
+  name: llm-d-epp-comprehensive-metrics
+  namespace: llm-d
+spec:
+  podMetricsEndpoints:
+    # EPP metrics on port 9090
+    - interval: 15s
+      path: /metrics
+      port: "9090"
+  selector:
+    matchExpressions:
+    # Match EPP pods by label OR by name pattern
+    - key: llm-d.ai/epp
+      operator: Exists

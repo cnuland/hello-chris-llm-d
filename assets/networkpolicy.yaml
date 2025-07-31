@@ -1,0 +1,63 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-d-network-policy
+  namespace: llm-d
+  labels:
+    app: llm-d
+    part-of: llm-d-demo
+spec:
+  podSelector:
+    matchLabels:
+      part-of: llm-d-demo
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow ingress from nginx ingress controller
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+  # Allow communication between frontend and backend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: llm-d-frontend
+    ports:
+    - protocol: TCP
+      port: 3001
+  # Allow communication from backend to other services
+  - from:
+    - podSelector:
+        matchLabels:
+          app: llm-d-backend
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow backend to communicate with LLM services
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: llm-d
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8081
+  # Allow backend to communicate with Prometheus
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    ports:
+    - protocol: TCP
+      port: 80
+  # Allow HTTPS for external dependencies
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
