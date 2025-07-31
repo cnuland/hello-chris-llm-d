@@ -1,6 +1,6 @@
 # LLM-D Architecture Testing Guide
 
-This guide shows how to run GuideLLM and other tests to verify the improved LLM-D architecture with P/D disaggregation and fixed prefix caching.
+This guide shows how to run tests to verify the LLM-D architecture. For architecture details and demo scenarios, see the [main README](README.md#demo-scenarios). For GuideLLM setup details, see the [GuideLLM README](guidellm/README.md).
 
 ## 🚀 Quick Start
 

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Zap, Database, Users, ChevronRight, Play, BarChart3 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Play, BarChart3, Activity } from 'lucide-react';
 import InferencePlayground from './components/InferencePlayground';
 import MetricsDashboard from './components/MetricsDashboard';
 import SystemStatus from './components/SystemStatus';
@@ -7,14 +7,15 @@ import './index.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('playground');
-  const [systemHealth, setSystemHealth] = useState({
+  
+  const systemHealth = {
     prefillPods: 1,
     decodePods: 2,
     eppPods: 1,
     cacheHitRate: 16.0,
     totalRequests: 2002,
     totalHits: 320
-  });
+  };
 
   const tabs = [
     { id: 'playground', name: 'Inference Playground', icon: Play },
@@ -23,37 +24,29 @@ function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b border-slate-200">
+      <header className="bg-gray-800 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <Zap className="h-8 w-8 text-llm-blue" />
-                <h1 className="text-2xl font-bold text-gray-900">LLM-D</h1>
-              </div>
-              <div className="hidden sm:flex items-center space-x-2 text-sm text-gray-600">
-                <ChevronRight className="h-4 w-4" />
-                <span>Distributed Inference Demo</span>
-              </div>
+            <div className="flex items-center space-x-2">
+              <BarChart3 className="h-8 w-8 text-blue-500" />
+              <h1 className="text-2xl font-bold text-white">LLM-D Dashboard</h1>
             </div>
             
             {/* Quick Stats */}
-            <div className="hidden md:flex items-center space-x-6 text-sm">
+            <div className="hidden md:flex items-center space-x-6 text-sm text-white">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-gray-600">System Healthy</span>
+                <span className="text-green-400">System Healthy</span>
               </div>
               <div className="flex items-center space-x-2">
-                <Database className="h-4 w-4 text-llm-purple" />
-                <span className="text-gray-900 font-medium">{systemHealth.cacheHitRate}%</span>
-                <span className="text-gray-600">Cache Hit Rate</span>
+                <span>{systemHealth.cacheHitRate}%</span>
+                <span className="text-gray-300">Cache Hit</span>
               </div>
               <div className="flex items-center space-x-2">
-                <Users className="h-4 w-4 text-llm-green" />
-                <span className="text-gray-900 font-medium">{systemHealth.prefillPods + systemHealth.decodePods}</span>
-                <span className="text-gray-600">Active Pods</span>
+                <span>{systemHealth.prefillPods + systemHealth.decodePods}</span>
+                <span className="text-gray-300">Active Pods</span>
               </div>
             </div>
           </div>
@@ -61,7 +54,7 @@ function App() {
       </header>
 
       {/* Navigation Tabs */}
-      <nav className="bg-white border-b border-slate-200">
+      <nav className="bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8">
             {tabs.map((tab) => {
@@ -70,10 +63,10 @@ function App() {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  className={`flex items-center space-x-2 py-4 px-1 border-b-4 font-medium text-sm transition-colors duration-150 ${
                     activeTab === tab.id
-                      ? 'border-llm-blue text-llm-blue'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-500 text-blue-500'
+                      : 'border-transparent text-gray-300 hover:text-gray-400 hover:border-gray-200'
                   }`}
                 >
                   <Icon className="h-4 w-4" />
@@ -93,16 +86,16 @@ function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 mt-16">
+      <footer className="bg-gray-900 text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 text-sm text-gray-600">
-              <span>LLM-D v1.0.0</span>
+            <div className="flex items-center space-x-4">
+              <span>LLM-D v1.0</span>
               <span>•</span>
               <span>Kubernetes-Native Distributed Inference</span>
             </div>
-            <div className="flex items-center space-x-4 text-sm text-gray-600">
-              <span>Model: meta-llama/Llama-3.2-1B</span>
+            <div className="flex items-center space-x-4">
+              <span>Model: Meta-LLaMA-3.2-1B</span>
               <span>•</span>
               <span>Namespace: llm-d</span>
             </div>

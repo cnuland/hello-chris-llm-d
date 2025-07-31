@@ -1,6 +1,8 @@
-# LLM-D Architecture Deployment
+# LLM-D Architecture Deployment Assets
 
-This directory contains assets for deploying a complete **LLM-D (Large Language Model Disaggregation)** architecture with:
+This directory contains assets for deploying a complete **LLM-D (Large Language Model Disaggregation)** architecture. For comprehensive architecture details and demo scenarios, see the [main README](../README.md).
+
+## 🎯 What's Included
 
 ## 🏗️ Architecture Components
 

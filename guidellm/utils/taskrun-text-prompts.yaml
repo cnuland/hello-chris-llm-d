@@ -1,0 +1,25 @@
+apiVersion: tekton.dev/v1
+kind: TaskRun
+metadata:
+  name: guidellm-benchmark-text-$(date +%s | tail -c 6)
+  namespace: llm-d
+  labels:
+    app: guidellm-benchmark
+    test-type: load-generation
+spec:
+  taskRef:
+    name: guidellm-benchmark
+  params:
+  - name: target
+    value: "http://llama-3-2-1b-service-decode.llm-d.svc.cluster.local:8000"
+  - name: model
+    value: "meta-llama/Llama-3.2-1B"
+  - name: processor
+    value: "none"
+  - name: data
+    value: '[{"prompt": "What is machine learning?", "output_tokens": 128}, {"prompt": "Explain artificial intelligence", "output_tokens": 128}, {"prompt": "How does deep learning work?", "output_tokens": 128}]'
+  - name: rate-type
+    value: "sweep"
+  workspaces:
+  - name: shared-workspace
+    emptyDir: {}

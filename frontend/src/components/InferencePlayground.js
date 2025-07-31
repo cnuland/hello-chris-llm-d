@@ -110,35 +110,34 @@ const InferencePlayground = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Inference Playground</h2>
-          <div className="flex items-center space-x-2 text-sm text-gray-600">
-            <Zap className="h-4 w-4 text-llm-blue" />
-            <span>Interactive Model Testing</span>
+        <div className="bg-gray-800 rounded-lg shadow-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-white">Inference Playground</h2>
+            <div className="flex items-center space-x-2 text-sm text-blue-400">
+              <span>Interactive Model Testing</span>
+            </div>
           </div>
+          <p className="text-gray-300">
+            Test the LLM-D distributed inference system with custom prompts. 
+            Try the cache-optimized prefixes to see improved performance!
+          </p>
         </div>
-        <p className="text-gray-600">
-          Test the LLM-D distributed inference system with custom prompts. 
-          Try the cache-optimized prefixes to see improved performance!
-        </p>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Input Section */}
         <div className="lg:col-span-2 space-y-6">
           {/* Quick Actions */}
-          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-            <h3 className="text-sm font-medium text-gray-900 mb-3">Quick Start</h3>
+          <div className="bg-gray-900 rounded-lg shadow-md p-4">
+            <h3 className="text-sm font-medium text-white mb-3">Quick Start</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
               <div>
-                <p className="text-xs text-gray-600 mb-2">Sample Prompts:</p>
+                <p className="text-xs text-gray-400 mb-2">Sample Prompts:</p>
                 <div className="space-y-1">
                   {samplePrompts.slice(0, 3).map((sample, idx) => (
                     <button
                       key={idx}
                       onClick={() => setPrompt(sample)}
-                      className="w-full text-left text-xs p-2 rounded border border-slate-200 hover:border-llm-blue hover:bg-blue-50 transition-colors"
+                      className="w-full text-left text-xs p-2 rounded border border-gray-600 bg-gray-800 text-gray-200 hover:border-blue-500 hover:bg-gray-700 transition-colors"
                     >
                       {sample.length > 40 ? sample.substring(0, 40) + '...' : sample}
                     </button>
@@ -146,13 +145,13 @@ const InferencePlayground = () => {
                 </div>
               </div>
               <div>
-                <p className="text-xs text-gray-600 mb-2">Cache-Optimized Prefixes:</p>
+                <p className="text-xs text-gray-400 mb-2">Cache-Optimized Prefixes:</p>
                 <div className="space-y-1">
                   {cachePrefixes.map((prefix, idx) => (
                     <button
                       key={idx}
                       onClick={() => setPrompt(prefix + ' ')}
-                      className="w-full text-left text-xs p-2 rounded border border-llm-green/20 bg-green-50 hover:border-llm-green hover:bg-green-100 transition-colors"
+                      className="w-full text-left text-xs p-2 rounded border border-green-600/30 bg-green-900/20 text-green-200 hover:border-green-500 hover:bg-green-800/30 transition-colors"
                     >
                       {prefix.length > 40 ? prefix.substring(0, 40) + '...' : prefix}
                     </button>
@@ -163,17 +162,17 @@ const InferencePlayground = () => {
           </div>
 
           {/* Main Input Form */}
-          <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+          <form onSubmit={handleSubmit} className="bg-gray-900 rounded-lg shadow-md p-6">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium text-white mb-2">
                   Your Prompt
                 </label>
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Enter your prompt here... (try one of the cache-optimized prefixes for better performance)"
-                  className="w-full h-32 p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-llm-blue focus:border-transparent resize-none"
+                  className="w-full h-32 p-3 border border-gray-600 bg-gray-800 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder-gray-400"
                   disabled={isLoading}
                 />
               </div>
@@ -183,14 +182,14 @@ const InferencePlayground = () => {
                 <button
                   type="button"
                   onClick={() => setShowAdvanced(!showAdvanced)}
-                  className="text-sm text-llm-blue hover:text-blue-700 font-medium"
+                  className="text-sm text-blue-400 hover:text-blue-300 font-medium"
                 >
                   {showAdvanced ? 'Hide' : 'Show'} Advanced Settings
                 </button>
                 <button
                   type="submit"
                   disabled={!prompt.trim() || isLoading}
-                  className="flex items-center space-x-2 bg-llm-blue text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="flex items-center space-x-2 bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {isLoading ? (
                     <>
@@ -208,9 +207,9 @@ const InferencePlayground = () => {
 
               {/* Advanced Settings */}
               {showAdvanced && (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg">
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-800 rounded-lg">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-white mb-1">
                       Temperature: {temperature}
                     </label>
                     <input
@@ -224,7 +223,7 @@ const InferencePlayground = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-white mb-1">
                       Max Tokens: {maxTokens}
                     </label>
                     <input

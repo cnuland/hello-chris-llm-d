@@ -1,10 +1,12 @@
 # LLM-D Demo Application Deployment Guide
 
+This guide focuses on deployment steps. For comprehensive feature descriptions and architecture details, see the [main README](README.md).
+
 ## 🎯 Current Status
 Your LLM-D demo application is **built and ready for deployment**! 
 
 ### ✅ What's Complete:
-- ✅ React Frontend with Inference Playground, Metrics Dashboard, and System Status
+- ✅ React Frontend with full UI components (see [README](README.md#user-interface-components))
 - ✅ Express.js Backend with API proxying and health checks  
 - ✅ Docker images built with Podman
 - ✅ Kubernetes manifests created

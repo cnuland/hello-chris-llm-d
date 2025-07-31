@@ -1,6 +1,6 @@
 # GuideLLM Pipeline Deployment
 
-This directory contains all the assets needed to deploy GuideLLM benchmarking capabilities for LLM endpoints.
+This directory contains all the assets needed to deploy GuideLLM benchmarking capabilities for LLM endpoints. For integration with the main LLM-D demo and performance benchmarks, see the [main README](../README.md#performance-benchmarks).
 
 ## Directory Structure
 
@@ -13,8 +13,13 @@ guidellm/
 │   └── pipelinerun-template.yaml      # Working PipelineRun template
 ├── utils/                             # Utility resources
 │   ├── pvc.yaml                       # Persistent Volume Claim for output
-│   ├── guidellm-job.yaml              # Kubernetes Job for running GuideLLM
+│   ├── guidellm-job.yaml              # Basic Kubernetes Job for running GuideLLM
+│   ├── guidellm-job-advanced.yaml     # Advanced Job with better config and auth
+│   ├── taskrun-template.yaml          # TaskRun template with dynamic naming
+│   ├── taskrun-text-prompts.yaml      # TaskRun for text-based prompts
 │   └── serviceaccount.yaml            # Service Account for pipeline
+├── archive/                           # Archived/deprecated files
+│   └── ...                            # Old TaskRun iterations
 ├── configs/                           # Configuration resources
 │   ├── config.yaml                    # GuideLLM ConfigMap
 │   └── env-config.yaml                # Environment ConfigMap
@@ -57,8 +62,26 @@ kubectl apply -k guidellm/
 
 ### Option 3: Run as Kubernetes Job
 
+**Basic Job (for simple testing):**
 ```bash
 kubectl apply -f guidellm/utils/guidellm-job.yaml
+```
+
+**Advanced Job (with better configuration and HuggingFace auth):**
+```bash
+kubectl apply -f guidellm/utils/guidellm-job-advanced.yaml
+```
+
+### Option 4: Run TaskRuns Directly
+
+**Template with dynamic naming:**
+```bash
+envsubst < guidellm/utils/taskrun-template.yaml | kubectl apply -f -
+```
+
+**Text-based prompts testing:**
+```bash
+envsubst < guidellm/utils/taskrun-text-prompts.yaml | kubectl apply -f -
 ```
 
 ## Configuration

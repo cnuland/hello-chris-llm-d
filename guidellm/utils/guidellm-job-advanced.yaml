@@ -1,0 +1,66 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: guidellm-benchmark-job
+  namespace: llm-d
+  labels:
+    app: guidellm-benchmark
+    test-type: load-generation
+spec:
+  template:
+    metadata:
+      labels:
+        app: guidellm-benchmark
+    spec:
+      restartPolicy: Never
+      serviceAccountName: pipeline
+      containers:
+      - name: guidellm
+        image: quay.io/rh-aiservices-bu/guidellm:latest
+        command: ["guidellm"]
+        args: [
+          "benchmark",
+          "--target", "http://llama-3-2-1b-service-decode.llm-d.svc.cluster.local:8000",
+          "--model", "meta-llama/Llama-3.2-1B",
+          "--rate-type", "sweep", 
+          "--max-seconds", "60",
+          "--data", "prompt_tokens=256,output_tokens=128"
+        ]
+        env:
+        - name: GUIDELLM_TARGET
+          value: "http://llama-3-2-1b-service-decode.llm-d.svc.cluster.local:8000"
+        - name: GUIDELLM_MODEL
+          value: "meta-llama/Llama-3.2-1B"
+        - name: GUIDELLM_RATE_TYPE
+          value: "sweep"
+        - name: GUIDELLM_MAX_SECONDS
+          value: "60"
+        - name: GUIDELLM_DATA
+          value: "prompt_tokens=256,output_tokens=128"
+        - name: SETTINGS_FILE_ENV_REQUIRED
+          value: "false"
+        - name: SETTINGS_FILE_ENV_EXTENSIONS
+          value: ""
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: HF_TOKEN
+        - name: HUGGINGFACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: HF_TOKEN
+        - name: HF_HOME
+          value: "/tmp/huggingface"
+        - name: TRANSFORMERS_CACHE
+          value: "/tmp/huggingface/transformers"
+        - name: HF_HUB_CACHE
+          value: "/tmp/huggingface/hub"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
