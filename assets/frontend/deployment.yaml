@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: quay.io/cnuland/llm-interface:frontend-simple
+        image: quay.io/cnuland/llm-interface:frontend-simple-v2
         imagePullPolicy: Always
         ports:
         - containerPort: 8080

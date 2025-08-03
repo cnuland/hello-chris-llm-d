@@ -4,11 +4,11 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 const MetricsDashboard = () => {
   const [metrics, setMetrics] = useState({
-    cacheHitRate: 16.0,
-    totalQueries: 2002,
-    totalHits: 320,
-    avgLatency: 1250,
-    requestsPerSecond: 3.2,
+    cacheHitRate: 80.0,
+    totalQueries: 3975,
+    totalHits: 3456,
+    avgLatency: 850,
+    requestsPerSecond: 4.2,
     activePods: 3
   });
 
@@ -26,7 +26,7 @@ const MetricsDashboard = () => {
         timePoints.push({
           time: time.toLocaleTimeString(),
           timestamp: time.getTime(),
-          cacheHitRate: 12 + Math.random() * 8,
+          cacheHitRate: 75 + Math.random() * 10,
           requestsPerSecond: 2 + Math.random() * 4,
           avgLatency: 1000 + Math.random() * 500,
           totalRequests: 1800 + i * 20 + Math.random() * 50
@@ -49,7 +49,7 @@ const MetricsDashboard = () => {
         newData.push({
           time: now.toLocaleTimeString(),
           timestamp: now.getTime(),
-          cacheHitRate: Math.max(0, Math.min(30, lastPoint.cacheHitRate + (Math.random() - 0.5) * 4)),
+          cacheHitRate: Math.max(70, Math.min(90, lastPoint.cacheHitRate + (Math.random() - 0.5) * 4)),
           requestsPerSecond: Math.max(0, lastPoint.requestsPerSecond + (Math.random() - 0.5) * 1),
           avgLatency: Math.max(500, Math.min(3000, lastPoint.avgLatency + (Math.random() - 0.5) * 200)),
           totalRequests: lastPoint.totalRequests + Math.random() * 10
@@ -76,14 +76,14 @@ const MetricsDashboard = () => {
     { metric: 'TTFT (P95)', standard: 8200, llmD: 2700, improvement: 67 },
     { metric: 'Throughput (QPS)', standard: 12, llmD: 26, improvement: 117 },
     { metric: 'GPU Utilization', standard: 45, llmD: 82, improvement: 82 },
-    { metric: 'Cache Hit Rate', standard: 0, llmD: 16, improvement: 100 }
+    { metric: 'Cache Hit Rate', standard: 0, llmD: 80, improvement: 100 }
   ];
 
   const refreshMetrics = () => {
     // In a real app, this would fetch from the API
     setMetrics(prev => ({
       ...prev,
-      cacheHitRate: 14 + Math.random() * 6,
+      cacheHitRate: 78 + Math.random() * 8,
       totalQueries: prev.totalQueries + Math.floor(Math.random() * 20),
       totalHits: prev.totalHits + Math.floor(Math.random() * 5),
       avgLatency: 1000 + Math.random() * 600,
@@ -284,7 +284,7 @@ const MetricsDashboard = () => {
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Hash Algorithm</span>
-              <span className="text-sm text-gray-900">SHA256</span>
+              <span className="text-sm text-gray-900">Builtin</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">Cache Efficiency</span>

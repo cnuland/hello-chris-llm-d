@@ -11,7 +11,13 @@ const InferencePlayground = () => {
   const [temperature, setTemperature] = useState(0.7);
   const [maxTokens, setMaxTokens] = useState(150);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [sessionId, setSessionId] = useState('');
   const responseRef = useRef(null);
+
+  // Generate session ID on component mount
+  useEffect(() => {
+    setSessionId(`playground-${Date.now()}`);
+  }, []);
 
   // Sample prompts for quick testing
   const samplePrompts = [
@@ -37,8 +43,8 @@ const InferencePlayground = () => {
     const startTime = Date.now();
 
     try {
-      // Use the decode service directly for now (since EPP had auth issues)
-      const endpoint = `${window.BACKEND_URL}/api/v1/completions`;
+      // Use the KV-cache aware endpoint with session affinity
+      const endpoint = `${window.CACHE_AWARE_ENDPOINT}/completions`;
       
       const requestData = {
         model: selectedModel,
@@ -51,7 +57,9 @@ const InferencePlayground = () => {
       const response = await axios.post(endpoint, requestData, {
         timeout: 30000,
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-Session-ID': sessionId,
+          'Cookie': `session=${sessionId}`
         }
       });
 

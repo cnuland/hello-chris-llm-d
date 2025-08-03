@@ -13,8 +13,9 @@
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
     <title>LLM-D Distributed Inference Demo</title>
     <script>
-      // Set the backend URL for API calls
-      window.BACKEND_URL = 'https://llm-d-backend-route-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com';
+      // Set the backend URL for API calls - using KV-cache aware routing
+      window.BACKEND_URL = 'https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com';
+      window.CACHE_AWARE_ENDPOINT = 'https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com/v1';
     </script>
   </head>
   <body>

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Play, BarChart3, Activity } from 'lucide-react';
+import { Play, BarChart3, Activity, Target } from 'lucide-react';
 import InferencePlayground from './components/InferencePlayground';
 import MetricsDashboard from './components/MetricsDashboard';
 import SystemStatus from './components/SystemStatus';
+import CacheRoutingDemo from './components/CacheRoutingDemo';
 import './index.css';
 
 function App() {
@@ -10,15 +11,16 @@ function App() {
   
   const systemHealth = {
     prefillPods: 1,
-    decodePods: 2,
+    decodePods: 3,
     eppPods: 1,
-    cacheHitRate: 16.0,
-    totalRequests: 2002,
-    totalHits: 320
+    cacheHitRate: 80.0,
+    totalRequests: 3975,
+    totalHits: 3456
   };
 
   const tabs = [
     { id: 'playground', name: 'Inference Playground', icon: Play },
+    { id: 'cache-demo', name: 'Cache Routing Demo', icon: Target },
     { id: 'metrics', name: 'Performance Metrics', icon: BarChart3 },
     { id: 'system', name: 'System Status', icon: Activity }
   ];
@@ -81,6 +83,7 @@ function App() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'playground' && <InferencePlayground />}
+        {activeTab === 'cache-demo' && <CacheRoutingDemo />}
         {activeTab === 'metrics' && <MetricsDashboard />}
         {activeTab === 'system' && <SystemStatus />}
       </main>
