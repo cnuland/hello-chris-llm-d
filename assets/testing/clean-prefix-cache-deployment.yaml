@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llama-test-clean-cache
+  namespace: llm-d
+  labels:
+    app: llama-test-clean-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: llama-test-clean-cache
+  template:
+    metadata:
+      labels:
+        app: llama-test-clean-cache
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:latest
+        args:
+        - --port
+        - "8000"
+        - --model
+        - meta-llama/Llama-3.2-1B
+        - --enable-prefix-caching
+        - --prefix-caching-hash-algo
+        - sha256
+        - --gpu-memory-utilization
+        - "0.8"
+        - --max-model-len
+        - "2048"
+        # NO KV-transfer-config - clean prefix caching only
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
+        env:
+        - name: HUGGING_FACE_HUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: token
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: llm-d-hf-token
+              key: token
+        - name: VLLM_LOGGING_LEVEL
+          value: INFO
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-test-clean-cache-service
+  namespace: llm-d
+spec:
+  selector:
+    app: llama-test-clean-cache
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  type: ClusterIP

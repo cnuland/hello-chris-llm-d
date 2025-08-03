@@ -1,0 +1,238 @@
+{
+  "routing_test": {
+    "results": [
+      {
+        "request_id": 1,
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 978.52,
+        "response_text": " Artificial intelligence (AI) is a branch of computer science that deals with the creation of intell...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:06:55.563147"
+      },
+      {
+        "request_id": 2,
+        "prompt": "What is artificial intelligence? Please explain in detail.",
+        "status": "success",
+        "latency_ms": 234.69,
+        "response_text": " What are the benefits of artificial intelligence? What are the challenges of artificial intelligenc...",
+        "prompt_tokens": 11,
+        "completion_tokens": 30,
+        "total_tokens": 41,
+        "timestamp": "2025-08-02T18:06:56.804046"
+      },
+      {
+        "request_id": 3,
+        "prompt": "What is machine learning?",
+        "status": "success",
+        "latency_ms": 237.72,
+        "response_text": " What is deep learning? What is artificial intelligence? What is the difference between machine lear...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:06:58.047629"
+      },
+      {
+        "request_id": 4,
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 212.23,
+        "response_text": " Artificial intelligence is a branch of computer science that deals with the creation of intelligent...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:06:59.264704"
+      },
+      {
+        "request_id": 5,
+        "prompt": "What is artificial intelligence? Can you tell me more?",
+        "status": "success",
+        "latency_ms": 303.28,
+        "response_text": " What are the benefits of artificial intelligence? What are the challenges of artificial intelligenc...",
+        "prompt_tokens": 12,
+        "completion_tokens": 30,
+        "total_tokens": 42,
+        "timestamp": "2025-08-02T18:07:00.574723"
+      },
+      {
+        "request_id": 6,
+        "prompt": "What is machine learning? How does it work?",
+        "status": "success",
+        "latency_ms": 322.2,
+        "response_text": " What are the benefits of machine learning? What are the challenges of machine learning? What are th...",
+        "prompt_tokens": 11,
+        "completion_tokens": 30,
+        "total_tokens": 41,
+        "timestamp": "2025-08-02T18:07:01.923970"
+      },
+      {
+        "request_id": 7,
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 399.8,
+        "response_text": " Artificial intelligence (AI) is a branch of computer science that deals with the creation of intell...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:03.327876"
+      },
+      {
+        "request_id": 8,
+        "prompt": "What is deep learning?",
+        "status": "success",
+        "latency_ms": 219.49,
+        "response_text": " Deep learning is a type of machine learning that uses artificial neural networks to learn from data...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:04.548856"
+      },
+      {
+        "request_id": 9,
+        "prompt": "What is artificial intelligence? Why is it important?",
+        "status": "success",
+        "latency_ms": 280.54,
+        "response_text": " How can it be used in the workplace? These are just some of the questions that come to mind when we...",
+        "prompt_tokens": 11,
+        "completion_tokens": 30,
+        "total_tokens": 41,
+        "timestamp": "2025-08-02T18:07:05.834410"
+      }
+    ],
+    "analysis": {
+      "successful": 9,
+      "failed": 0,
+      "avg_latency": 354.27444444444444,
+      "min_latency": 212.23,
+      "max_latency": 978.52
+    }
+  },
+  "cache_test": {
+    "results": [
+      {
+        "request_id": "cache-1",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 234.9,
+        "response_text": " What is the future of AI? What is the future of AI in the workplace? What is the future of AI in th...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:07.080478"
+      },
+      {
+        "request_id": "cache-2",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 219.75,
+        "response_text": " Artificial intelligence (AI) is a branch of computer science that deals with the creation of intell...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:07.805983"
+      },
+      {
+        "request_id": "cache-3",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 213.28,
+        "response_text": " What is machine learning? What is deep learning? What is deep reinforcement learning? What is reinf...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:08.525055"
+      },
+      {
+        "request_id": "cache-4",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 202.17,
+        "response_text": " What is the future of AI? What is the future of AI in the workplace? What is the future of AI in th...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:09.231311"
+      },
+      {
+        "request_id": "cache-5",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 195.87,
+        "response_text": " What is the future of artificial intelligence? What is the future of artificial intelligence? What ...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:09.931528"
+      },
+      {
+        "request_id": "cache-6",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 214.25,
+        "response_text": " What is machine learning? What is deep learning? What is deep reinforcement learning? What is reinf...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:10.651593"
+      },
+      {
+        "request_id": "cache-7",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 212.82,
+        "response_text": " What is the future of AI? What is the future of AI in the workplace? What is the future of AI in th...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:11.365415"
+      },
+      {
+        "request_id": "cache-8",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 236.0,
+        "response_text": " What is the future of AI? What is the future of AI in the workplace? What is the future of AI in th...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:12.107319"
+      },
+      {
+        "request_id": "cache-9",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 220.45,
+        "response_text": " What is machine learning? What is deep learning? What is deep reinforcement learning? What is reinf...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:12.828908"
+      },
+      {
+        "request_id": "cache-10",
+        "prompt": "What is artificial intelligence?",
+        "status": "success",
+        "latency_ms": 223.12,
+        "response_text": " What is the future of AI? What are the benefits of AI? What are the challenges of AI? What are the ...",
+        "prompt_tokens": 6,
+        "completion_tokens": 30,
+        "total_tokens": 36,
+        "timestamp": "2025-08-02T18:07:13.556140"
+      }
+    ],
+    "analysis": {
+      "successful": 10,
+      "failed": 0,
+      "avg_latency": 217.26100000000002,
+      "min_latency": 195.87,
+      "max_latency": 236.0
+    }
+  },
+  "timestamp": "2025-08-02T18:07:14.062640",
+  "configuration": {
+    "backend_url": "https://llm-d-backend-route-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com/api/v1/completions",
+    "gateway_url": "https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com/v1/completions"
+  }
+}
