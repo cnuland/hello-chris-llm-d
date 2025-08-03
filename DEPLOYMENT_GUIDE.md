@@ -1,16 +1,36 @@
-# LLM-D Demo Application Deployment Guide
+# LLM-D Deployment Guide
 
-This guide focuses on deployment steps. For comprehensive feature descriptions and architecture details, see the [main README](README.md).
+Step-by-step instructions for deploying the LLM-D distributed inference platform. For architecture details and feature overview, see the [main README](README.md).
 
-## 🎯 Current Status
-Your LLM-D demo application is **built and ready for deployment**! 
+## 🚀 Deployment Options
 
-### ✅ What's Complete:
-- ✅ React Frontend with full UI components (see [README](README.md#user-interface-components))
-- ✅ Express.js Backend with API proxying and health checks  
-- ✅ Docker images built with Podman
-- ✅ Kubernetes manifests created
-- ✅ Images tagged for Quay.io registry
+### Option 1: Production Cache-Aware Deployment (Recommended)
+```bash
+# Deploy optimized cache-aware system
+kubectl apply -k assets/cache-aware/
+
+# Verify deployment
+kubectl get pods -n llm-d -l app=llama-3-2-1b-decode
+
+# Test functionality
+./assets/cache-aware/cache-test.sh
+```
+
+### Option 2: Standard Asset Deployment
+```bash
+# Deploy base infrastructure
+kubectl apply -k assets/
+
+# Deploy monitoring (optional)
+kubectl apply -k assets/monitoring/
+```
+
+### Option 3: Custom Component Deployment
+```bash
+# Deploy specific components
+kubectl apply -f assets/cache-aware/model-service.yaml
+kubectl apply -f assets/cache-aware/gateway.yaml
+```
 
 ## 🚀 Final Deployment Steps
 

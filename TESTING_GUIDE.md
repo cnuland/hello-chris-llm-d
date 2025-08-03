@@ -1,6 +1,6 @@
-# LLM-D Architecture Testing Guide
+# LLM-D Testing & Validation Guide
 
-This guide shows how to run tests to verify the LLM-D architecture. For architecture details and demo scenarios, see the [main README](README.md#demo-scenarios). For GuideLLM setup details, see the [GuideLLM README](guidellm/README.md).
+Comprehensive testing procedures to verify LLM-D performance and functionality. For architecture details, see the [main README](README.md). For deployment steps, see the [Deployment Guide](DEPLOYMENT_GUIDE.md).
 
 ## 🚀 Quick Start
 

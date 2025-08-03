@@ -1,6 +1,6 @@
-# Metrics Collection Debug Guide
+# LLM-D Troubleshooting & Debug Guide
 
-This guide helps troubleshoot metrics collection issues with the LLM-D architecture. For monitoring setup and configuration details, see the [main README monitoring section](README.md#monitoring-and-observability).
+Comprehensive troubleshooting guide for LLM-D platform issues including metrics collection, cache performance, deployment problems, and performance optimization. For monitoring setup details, see the [Metrics & Monitoring Guide](assets/cache-aware/docs/METRICS.md).
 
 ## 🔍 Quick Diagnosis Commands
 
