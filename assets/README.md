@@ -10,6 +10,7 @@ This directory contains assets for deploying a complete **LLM-D (Large Language 
 - **Purpose**: Intelligent request scheduler and router
 - **Features**: 
   - ✅ P/D disaggregation enabled (`PD_ENABLED=true`)
+  - ✅ KV cache-aware routing (`ENABLE_KVCACHE_AWARE_SCORER=true`)
   - ✅ Load-aware and prefix-aware scoring
   - ✅ Routes requests to appropriate prefill or decode pods
 

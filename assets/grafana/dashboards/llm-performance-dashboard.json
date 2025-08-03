@@ -337,14 +337,81 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(vllm:gpu_prefix_cache_hits_total[5m]) / rate(vllm:gpu_prefix_cache_queries_total[5m])",
+          "expr": "sum(vllm:gpu_prefix_cache_hits_total) / sum(vllm:gpu_prefix_cache_queries_total)",
           "interval": "",
-          "legendFormat": "Cache Hit Rate",
+          "legendFormat": "Overall Cache Hit Rate",
           "refId": "A"
         }
       ],
       "title": "KV Cache Hit Rate",
       "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "**Per-Pod Cache Metrics** shows cache performance for each individual decode pod. This helps identify which pods are receiving traffic and their cache efficiency. Useful for troubleshooting cache-aware routing.\n\n• **Green bars**: Pods with good cache hit rates\n• **Red/Yellow bars**: Pods with poor cache efficiency\n• **Missing bars**: Pods with no recent activity",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.3
+              },
+              {
+                "color": "green",
+                "value": 0.6
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 9,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "vllm:gpu_prefix_cache_hits_total / vllm:gpu_prefix_cache_queries_total",
+          "interval": "",
+          "legendFormat": "Pod {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-Pod Cache Hit Rates",
+      "type": "bargauge"
     },
     {
       "datasource": {
@@ -491,7 +558,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 24
       },
       "id": 6,
       "options": {
@@ -573,7 +640,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 24
       },
       "id": 7,
       "options": {
@@ -663,7 +730,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "id": 8,
       "options": {

@@ -16,7 +16,7 @@ spec:
   
   # Decode phase configuration
   decode:
-    replicas: 1
+    replicas: 3
     acceleratorTypes:
       labelKey: nvidia.com/gpu.present
       labelValues:
@@ -37,7 +37,7 @@ spec:
   
   # Prefill phase configuration
   prefill:
-    replicas: 1
+    replicas: 2
     containers:
     - name: vllm
       env:

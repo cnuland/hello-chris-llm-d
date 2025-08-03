@@ -23,3 +23,5 @@ spec:
         - path:
             type: PathPrefix
             value: /v1
+# NOTE: This HTTPRoute properly routes /v1/* requests to the EPP service
+# which handles cache-aware routing to decode/prefill pods

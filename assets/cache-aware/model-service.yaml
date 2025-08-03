@@ -1,0 +1,96 @@
+# Cache-Aware ModelService Configuration
+# This ModelService uses the hybrid cache ConfigMap for optimal prefix caching
+apiVersion: llm-d.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: llama-3-2-1b
+  namespace: llm-d
+spec:
+  baseConfigMapRef:
+    name: basic-gpu-with-hybrid-cache
+  decode:
+    acceleratorTypes:
+      labelKey: nvidia.com/gpu.present
+      labelValues:
+      - "true"
+    containers:
+    - env:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            key: HF_TOKEN
+            name: llm-d-hf-token
+      name: vllm
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+    replicas: 3
+  modelArtifacts:
+    authSecretName: llm-d-hf-token
+    size: 50Gi
+    uri: hf://meta-llama/Llama-3.2-1B
+  prefill:
+    containers:
+    - env:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            key: HF_TOKEN
+            name: llm-d-hf-token
+      name: vllm
+    replicas: 2
+  routing:
+    gatewayRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm-d-gateway
+      namespace: llm-d
+    modelName: llama-3-2-1b
+status:
+  conditions:
+  - lastTransitionTime: "2025-08-01T02:56:45Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: PrefillAvailable
+  - lastTransitionTime: "2025-08-02T23:10:12Z"
+    message: ReplicaSet "llama-3-2-1b-prefill-6d569f44fb" is progressing.
+    reason: ReplicaSetUpdated
+    status: "True"
+    type: PrefillProgressing
+  - lastTransitionTime: "2025-08-02T23:11:50Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: DecodeAvailable
+  - lastTransitionTime: "2025-08-02T23:15:04Z"
+    message: ReplicaSet "llama-3-2-1b-decode-759ff7cc9" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: DecodeProgressing
+  - lastTransitionTime: "2025-07-31T00:53:47Z"
+    message: Deployment has minimum availability.
+    reason: MinimumReplicasAvailable
+    status: "True"
+    type: EppAvailable
+  - lastTransitionTime: "2025-08-01T03:21:20Z"
+    message: ReplicaSet "llama-3-2-1b-epp-6f6b76b7d7" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: EppProgressing
+  decodeAvailable: 3
+  decodeDeploymentRef: llama-3-2-1b-decode
+  decodeReady: 3/3
+  eppAvailable: 1
+  eppDeploymentRef: llama-3-2-1b-epp
+  eppReady: 1/1
+  eppRoleBinding: llama-3-2-1b-epp-rolebinding
+  httpRouteRef: llama-3-2-1b-http-route
+  inferenceModelRef: llama-3-2-1b
+  inferencePoolRef: llama-3-2-1b-inference-pool
+  prefillAvailable: 2
+  prefillDeploymentRef: llama-3-2-1b-prefill
+  prefillReady: 2/2
+  prefillServiceAccountRef: llama-3-2-1b-epp-sa
