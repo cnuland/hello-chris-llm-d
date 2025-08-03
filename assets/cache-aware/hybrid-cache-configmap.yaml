@@ -19,7 +19,7 @@ data:
             - effect: NoSchedule
               key: nvidia.com/gpu
               operator: Exists
-          initContainers:
+          containers:
             - name: routing-proxy
               image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
               securityContext:
@@ -34,7 +34,6 @@ data:
               ports:
                 - containerPort: 8000
                   protocol: TCP
-              restartPolicy: Always
               imagePullPolicy: IfNotPresent
               livenessProbe:
                 tcpSocket:
@@ -46,7 +45,6 @@ data:
                   port: 8000
                 failureThreshold: 3
                 periodSeconds: 5
-          containers:
             - name: vllm
               image: ghcr.io/llm-d/llm-d:v0.2.0
               imagePullPolicy: IfNotPresent

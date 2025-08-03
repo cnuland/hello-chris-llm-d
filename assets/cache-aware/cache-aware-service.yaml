@@ -1,17 +1,25 @@
-# Production Cache-Aware Service with Session Affinity
-# Enables 2-hour client stickiness for optimal cache performance
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","kind":"Service","metadata":{"annotations":{},"labels":{"app":"cache-aware","llmd.ai/gather-metrics":"true"},"name":"llama-3-2-1b-cache-aware-service","namespace":"llm-d"},"spec":{"ports":[{"name":"vllm-proxy","port":8000,"protocol":"TCP","targetPort":8000},{"name":"vllm","port":8001,"protocol":"TCP","targetPort":8001}],"selector":{"llm-d.ai/model":"llama-3-2-1b","llm-d.ai/role":"decode"},"sessionAffinity":"ClientIP","sessionAffinityConfig":{"clientIP":{"timeoutSeconds":7200}},"type":"ClusterIP"}}
+  creationTimestamp: "2025-08-02T23:13:57Z"
+  labels:
+    app: cache-aware
+    llmd.ai/gather-metrics: "true"
   name: llama-3-2-1b-cache-aware-service
   namespace: llm-d
-  labels:
-    llmd.ai/gather-metrics: "true"
-    app: cache-aware
+  resourceVersion: "9162159"
+  uid: fecd22fb-a548-4b5b-800d-a95544f5f937
 spec:
-  selector:
-    llm-d.ai/role: decode
-    llm-d.ai/model: llama-3-2-1b
+  clusterIP: 172.30.180.193
+  clusterIPs:
+  - 172.30.180.193
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
   ports:
   - name: vllm-proxy
     port: 8000
@@ -21,8 +29,13 @@ spec:
     port: 8001
     protocol: TCP
     targetPort: 8001
+  selector:
+    llm-d.ai/model: llama-3-2-1b
+    llm-d.ai/role: decode
   sessionAffinity: ClientIP
   sessionAffinityConfig:
     clientIP:
-      timeoutSeconds: 7200  # 2 hours
+      timeoutSeconds: 7200
   type: ClusterIP
+status:
+  loadBalancer: {}

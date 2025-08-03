@@ -1,0 +1,12 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: cache-hit-run-
+spec:
+  pipelineRef:
+    name: cache-hit-pipeline
+  params:
+    - name: namespace
+      value: "llm-d"
+    - name: gateway-url
+      value: "https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com"

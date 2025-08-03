@@ -1,10 +1,16 @@
-# Cache-Aware ModelService Configuration
-# This ModelService uses the hybrid cache ConfigMap for optimal prefix caching
 apiVersion: llm-d.ai/v1alpha1
 kind: ModelService
 metadata:
+  annotations:
+    config-refresh: "1754193351"
+    force-reconcile: "1754193196"
+    reconcile.timestamp: "1754193115"
+  creationTimestamp: "2025-07-31T00:53:35Z"
+  generation: 6
   name: llama-3-2-1b
   namespace: llm-d
+  resourceVersion: "9463869"
+  uid: b976fe96-bcb2-4e18-b02d-8e8e573988f4
 spec:
   baseConfigMapRef:
     name: basic-gpu-with-hybrid-cache
@@ -55,28 +61,28 @@ status:
     reason: MinimumReplicasAvailable
     status: "True"
     type: PrefillAvailable
-  - lastTransitionTime: "2025-08-02T23:10:12Z"
-    message: ReplicaSet "llama-3-2-1b-prefill-6d569f44fb" is progressing.
-    reason: ReplicaSetUpdated
-    status: "True"
+  - lastTransitionTime: "2025-08-03T03:23:02Z"
+    message: ReplicaSet "llama-3-2-1b-prefill-75b5688cf4" has timed out progressing.
+    reason: ProgressDeadlineExceeded
+    status: "False"
     type: PrefillProgressing
-  - lastTransitionTime: "2025-08-02T23:11:50Z"
+  - lastTransitionTime: "2025-08-03T03:12:40Z"
+    message: ReplicaSet "llama-3-2-1b-decode-68678d7dfb" has successfully progressed.
+    reason: NewReplicaSetAvailable
+    status: "True"
+    type: DecodeProgressing
+  - lastTransitionTime: "2025-08-03T03:37:59Z"
     message: Deployment has minimum availability.
     reason: MinimumReplicasAvailable
     status: "True"
     type: DecodeAvailable
-  - lastTransitionTime: "2025-08-02T23:15:04Z"
-    message: ReplicaSet "llama-3-2-1b-decode-759ff7cc9" has successfully progressed.
-    reason: NewReplicaSetAvailable
-    status: "True"
-    type: DecodeProgressing
   - lastTransitionTime: "2025-07-31T00:53:47Z"
     message: Deployment has minimum availability.
     reason: MinimumReplicasAvailable
     status: "True"
     type: EppAvailable
-  - lastTransitionTime: "2025-08-01T03:21:20Z"
-    message: ReplicaSet "llama-3-2-1b-epp-6f6b76b7d7" has successfully progressed.
+  - lastTransitionTime: "2025-08-02T23:51:11Z"
+    message: ReplicaSet "llama-3-2-1b-epp-7cff4cbff9" has successfully progressed.
     reason: NewReplicaSetAvailable
     status: "True"
     type: EppProgressing
