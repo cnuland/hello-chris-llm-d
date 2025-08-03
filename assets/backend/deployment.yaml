@@ -1,12 +1,12 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-d-backend
-  namespace: llm-d
   labels:
     app: llm-d-backend
     component: backend
     part-of: llm-d-demo
+  name: llm-d-backend
+  namespace: llm-d
 spec:
   replicas: 2
   selector:
@@ -19,16 +19,9 @@ spec:
         component: backend
     spec:
       containers:
-      - name: backend
-        image: quay.io/cnuland/llm-interface:backend-amd64
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 3001
-          name: http
-          protocol: TCP
-        env:
+      - env:
         - name: NODE_ENV
-          value: "production"
+          value: production
         - name: PORT
           value: "3001"
         - name: LLM_SERVICE_URL
@@ -37,27 +30,34 @@ spec:
           value: "http://llama-3-2-1b-epp-service.llm-d.svc.cluster.local:9002"
         - name: PROMETHEUS_URL
           value: "http://prometheus-server.monitoring.svc.cluster.local:80"
-        resources:
-          requests:
-            cpu: 200m
-            memory: 256Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
+        image: quay.io/cnuland/llm-interface:backend-amd64
+        imagePullPolicy: Always
         livenessProbe:
+          failureThreshold: 3
           httpGet:
             path: /health
             port: 3001
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+        name: backend
+        ports:
+        - containerPort: 3001
+          name: http
+          protocol: TCP
         readinessProbe:
+          failureThreshold: 3
           httpGet:
             path: /health
             port: 3001
           initialDelaySeconds: 10
           periodSeconds: 5
           timeoutSeconds: 3
-          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+          requests:
+            cpu: 200m
+            memory: 256Mi
       restartPolicy: Always

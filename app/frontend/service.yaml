@@ -1,14 +1,18 @@
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    app: llm-d-frontend
   name: llm-d-frontend-service
   namespace: llm-d
+  labels:
+    app: llm-d-frontend
+    component: frontend
+    part-of: llm-d-demo
 spec:
+  type: ClusterIP
   ports:
   - port: 80
     targetPort: 8080
+    protocol: TCP
+    name: http
   selector:
     app: llm-d-frontend
-  type: ClusterIP

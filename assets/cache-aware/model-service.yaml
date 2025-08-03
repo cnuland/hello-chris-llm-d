@@ -1,16 +1,8 @@
 apiVersion: llm-d.ai/v1alpha1
 kind: ModelService
 metadata:
-  annotations:
-    config-refresh: "1754193351"
-    force-reconcile: "1754193196"
-    reconcile.timestamp: "1754193115"
-  creationTimestamp: "2025-07-31T00:53:35Z"
-  generation: 6
   name: llama-3-2-1b
   namespace: llm-d
-  resourceVersion: "9463869"
-  uid: b976fe96-bcb2-4e18-b02d-8e8e573988f4
 spec:
   baseConfigMapRef:
     name: basic-gpu-with-hybrid-cache
@@ -54,49 +46,3 @@ spec:
       name: llm-d-gateway
       namespace: llm-d
     modelName: llama-3-2-1b
-status:
-  conditions:
-  - lastTransitionTime: "2025-08-01T02:56:45Z"
-    message: Deployment has minimum availability.
-    reason: MinimumReplicasAvailable
-    status: "True"
-    type: PrefillAvailable
-  - lastTransitionTime: "2025-08-03T03:23:02Z"
-    message: ReplicaSet "llama-3-2-1b-prefill-75b5688cf4" has timed out progressing.
-    reason: ProgressDeadlineExceeded
-    status: "False"
-    type: PrefillProgressing
-  - lastTransitionTime: "2025-08-03T03:12:40Z"
-    message: ReplicaSet "llama-3-2-1b-decode-68678d7dfb" has successfully progressed.
-    reason: NewReplicaSetAvailable
-    status: "True"
-    type: DecodeProgressing
-  - lastTransitionTime: "2025-08-03T03:37:59Z"
-    message: Deployment has minimum availability.
-    reason: MinimumReplicasAvailable
-    status: "True"
-    type: DecodeAvailable
-  - lastTransitionTime: "2025-07-31T00:53:47Z"
-    message: Deployment has minimum availability.
-    reason: MinimumReplicasAvailable
-    status: "True"
-    type: EppAvailable
-  - lastTransitionTime: "2025-08-02T23:51:11Z"
-    message: ReplicaSet "llama-3-2-1b-epp-7cff4cbff9" has successfully progressed.
-    reason: NewReplicaSetAvailable
-    status: "True"
-    type: EppProgressing
-  decodeAvailable: 3
-  decodeDeploymentRef: llama-3-2-1b-decode
-  decodeReady: 3/3
-  eppAvailable: 1
-  eppDeploymentRef: llama-3-2-1b-epp
-  eppReady: 1/1
-  eppRoleBinding: llama-3-2-1b-epp-rolebinding
-  httpRouteRef: llama-3-2-1b-http-route
-  inferenceModelRef: llama-3-2-1b
-  inferencePoolRef: llama-3-2-1b-inference-pool
-  prefillAvailable: 2
-  prefillDeploymentRef: llama-3-2-1b-prefill
-  prefillReady: 2/2
-  prefillServiceAccountRef: llama-3-2-1b-epp-sa

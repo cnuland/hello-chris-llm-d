@@ -40,16 +40,16 @@ kubectl get pods -n llm-d -l app=llama-3-2-1b-decode
 ## 📚 Documentation
 
 ### Essential Guides
-- **[Deployment Guide](DEPLOYMENT_GUIDE.md)** - Step-by-step deployment instructions
-- **[Testing Guide](TESTING_GUIDE.md)** - Comprehensive testing and validation procedures
-- **[Troubleshooting Guide](METRICS_DEBUG_GUIDE.md)** - Common issues and debugging procedures
-- **[Demo Guide](LLM-D_COMPREHENSIVE_DEMO_GUIDE.md)** - Complete demonstration walkthrough
+- **[Deployment Guide](deployment-guide.md)** - Step-by-step deployment instructions
+- **[Testing Guide](testing-guide.md)** - Comprehensive testing and validation procedures
+- **[Troubleshooting Guide](metrics-debug-guide.md)** - Common issues and debugging procedures
+- **[Demo Guide](llm-d-comprehensive-demo-guide.md)** - Complete demonstration walkthrough
 
 ### Architecture & Technical Details
-- **[Architecture Guide](assets/cache-aware/docs/ARCHITECTURE.md)** - Detailed system architecture
-- **[Metrics & Monitoring](assets/cache-aware/docs/METRICS.md)** - Monitoring setup and observability
+- **[Architecture Guide](assets/cache-aware/docs/architecture.md)** - Detailed system architecture
+- **[Metrics & Monitoring](assets/cache-aware/docs/metrics.md)** - Monitoring setup and observability
 - **[Cache-Aware Routing Implementation](cache-aware-routing.md)** - Complete implementation guide
-- **[Development Journey](assets/cache-aware/docs/DEVELOPMENT-JOURNEY.md)** - Lessons learned and technical insights
+- **[Development Journey](assets/cache-aware/docs/development-journey.md)** - Lessons learned and technical insights
 
 ## 📋 Prerequisites
 
@@ -117,7 +117,7 @@ This demonstration includes several production-ready improvements and fixes:
 - **Metrics Exposure**: Working ServiceMonitor and PodMonitor for comprehensive vLLM metrics collection
 - **Prometheus Integration**: Configured namespace labeling for OpenShift cluster monitoring integration
 - **Rich Telemetry**: Exposed 384+ vLLM-specific metrics including request rates, token processing, and cache analytics
-- **Real-time Debugging**: Created comprehensive debugging tools (`debug-metrics.sh`, `METRICS_DEBUG_GUIDE.md`)
+- **Real-time Debugging**: Created comprehensive debugging tools (`scripts/debug-metrics.sh`, `metrics-debug-guide.md`)
 
 ### 🛠️ Benchmarking & Load Testing
 - **GuideLLM Integration**: Complete Tekton pipeline setup for automated LLM benchmarking
@@ -268,7 +268,7 @@ All improvements are based on real production challenges and have been thoroughl
 
 ### Backend Development
 ```bash
-cd backend
+cd app/backend
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -277,7 +277,7 @@ python -m app.main
 
 ### Frontend Development
 ```bash
-cd frontend
+cd app/frontend
 npm install
 npm start
 # Development server runs on http://localhost:3000
@@ -286,10 +286,10 @@ npm start
 ### Local Testing
 ```bash
 # Run backend tests
-cd backend && python -m pytest
+cd app/backend && python -m pytest
 
 # Run frontend tests
-cd frontend && npm test
+cd app/frontend && npm test
 
 # Integration tests
 ./scripts/test-integration.sh
@@ -501,12 +501,12 @@ python3 assets/testing/test-cache-aware-routing.py
 - Intelligent request distribution across 3 decode pods
 - Real-time cache metrics available via vLLM endpoints
 
-**Complete Demo Guide:** [assets/DEMO_CACHE_AWARE_ROUTING.md](assets/DEMO_CACHE_AWARE_ROUTING.md)
+**Complete Demo Guide:** [assets/demo-cache-aware-routing.md](assets/demo-cache-aware-routing.md)
 
 ### Additional Testing Resources
 
 - **Load Testing**: `assets/load-testing/` - GuideLLM benchmarking suite
-- **Frontend UI**: `assets/frontend/` - Interactive React-based interface  
+- **Frontend UI**: `app/frontend/` - Interactive React-based interface  
 - **Monitoring**: Grafana dashboard at configured route (admin/admin)
 - **Test Scripts**: `assets/testing/` - Automated verification and testing
 
