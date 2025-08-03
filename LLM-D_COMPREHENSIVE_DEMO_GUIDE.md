@@ -211,7 +211,8 @@
 
 **Show**:
 - **384+ vLLM-specific metrics**: Real-time performance data
-- **GPU utilization and cache analytics**: Resource optimization insights
+- **KV Cache Memory Usage**: Percentage of allocated GPU memory blocks used for cache storage
+- **Cache Hit Rate Analytics**: 86% hit rate demonstrating LLM-D's cache efficiency
 - **Request latency percentiles**: P50, P95, P99 performance distributions
 - **Token processing rates**: Throughput analysis and capacity planning
 - **Custom alerting and SLA monitoring**: Proactive performance management

@@ -138,7 +138,7 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "description": "GPU cache utilization percentage",
+        "description": "KV Cache Memory Usage shows the percentage of allocated GPU memory blocks being used for KV cache storage. The KV cache stores attention keys and values to avoid recomputation. This metric represents actual cache memory consumption, not overall GPU utilization.\n\n• **Green (0-70%)**: Optimal range\n• **Yellow (70-90%)**: Monitor closely\n• **Red (90%+)**: Risk of cache evictions",
         "fieldConfig": {
           "defaults": {
             "color": {
