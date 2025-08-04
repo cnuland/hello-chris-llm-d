@@ -195,12 +195,10 @@ data:
 
 ### (1) EPP (External Processing Pod)
 
-The EPP (External Processing Pod) is a critical component generated automatically by the operator and functions as the **inference scheduler** within the LLM-D framework. This intelligent routing mechanism queries Redis to check which decode pod has the relevant cache entries, thus efficiently directing incoming requests to the pod that can handle them most effectively. By leveraging the KV-cache indexes, the EPP minimizes the need for redundant computation and optimizes the overall system throughput. This ensures that pods with warm cache states are prioritized, significantly reducing the latency and resource consumption during high-concurrency workloads.
+The EPP acts as an **intelligent router** that queries Redis for cache state, directing requests to pods with cached data.
 
 ```yaml
 - name: ENABLE_KVCACHE_AWARE_SCORER
-  value: "true"
-- name: PD_ENABLED
   value: "true"
 - name: KVCACHE_INDEXER_REDIS_ADDR
   value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
@@ -208,9 +206,9 @@ The EPP (External Processing Pod) is a critical component generated automaticall
 
 ---
 
-### (2) Decode Pod Sidecar (Routing Proxy)
+### (2) Routing Proxy Sidecar
 
-Each decode pod runs a **sidecar container** that speaks NIXL over port 5557. It enables **KV-cache transfer** between pods when necessary.
+Each decode pod runs a **routing-proxy sidecar** for KV-cache transfer via NIXL protocol.
 
 ```yaml
 args:
@@ -219,30 +217,22 @@ args:
   - "--vllm-port=8001"
 ```
 
-The presence of a sidecar container within each decode pod is fundamental to enabling **KV-cache transfer** between pods when necessary. This component operates by listening for cache metadata and interchanging KV data with other pods, allowing for seamless and efficient sharing of cache information. It communicates over the NIXL protocol through a dedicated port, ensuring that the cache states are consistent and up-to-date across the cluster. This arrangement maximizes cache hits by allowing routing decisions to use prefix matching, thereby enhancing the coherence and speed of the inference process. The sidecar's integration is pivotal in making the decode pods cache-aware, ensuring operational efficiency and reduced data redundancy.
-
 ---
 
-### (3) vLLM Container Configuration
+### (3) vLLM Configuration
 
-The vLLM container is the core model server, responsible for running inference requests. To support KV-cache-aware routing, the container must be configured for prefix caching and KV-cache exposure:
+The vLLM container enables **prefix caching** and exposes cache state through a side-channel:
 
 ```yaml
 args:
   - "--enable-prefix-caching"
-  - "--prefix-caching-hash-algo"
-  - "builtin"
-  - "--gpu-memory-utilization"
-  - "0.9"
-  - "--block-size"
-  - "16"
+  - "--prefix-caching-hash-algo=builtin"
+  - "--block-size=16"
   - "--no-enable-chunked-prefill"
 env:
   - name: VLLM_NIXL_SIDE_CHANNEL_PORT
     value: "5557"
 ```
-
-The vLLM container is the powerhouse of the inference pipeline, responsible for processing the model requests with optimized caching strategies in place. By enabling **prefix caching** and configuring the container for **KV-cache exposure**, the vLLM container reduces processing times by reusing previously cached embeddings and token completions. The configuration also tunes GPU memory use, setting utilization thresholds to maintain optimal memory allocation without overcommitment. With side-channel communications active, the container can interact with the routing proxy, allowing for real-time updates of cache states and enabling smarter routing based on current cache availability. This streamlined configuration aligns with the project's goal of minimizing latencies and maximizing throughput by exploiting cache-based efficiencies.
 
 ---
 
@@ -255,7 +245,7 @@ To validate that KV-cache-aware routing was functioning correctly, we designed a
 - Redis telemetry for prefix index hits  
 - vLLM logs for cache use  
 - Tekton metrics for latency  
-- Grafana dashboards for analysis
+- Grafana dashboard for visability
 
 ### 🔍 Results
 -Overall Performance:
