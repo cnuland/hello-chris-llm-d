@@ -109,7 +109,7 @@ spec:
         requests:
           nvidia.com/gpu: "1"
 
-  # (4) CPU-based prefill pods to optimize GPU usage
+  # (4) Prefill pods to optimize GPU usage
   prefill:
     replicas: 2
     containers:
