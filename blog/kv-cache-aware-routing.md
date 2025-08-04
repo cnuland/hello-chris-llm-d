@@ -248,12 +248,11 @@ To validate that KV-cache-aware routing was functioning correctly, we designed a
 - Grafana dashboard for visability
 
 ### 🔍 Results
--Overall Performance:
+Overall Performance:
 - **Total Queries: 14,979**
 - **Total Cache Hits: 12,976**
--  **86% cache hit rate**, with 75% requests routed to a single warm pod  
--  **Prefill latency dropped by ~70%** for repeated prompts  
--  **Throughput improved**, enabling more concurrency  
+-  **86% cache hit rate**, with 75% requests routed to the single warm pod  
+-  **Throughput improved via llm-d**, enabling more concurrency  
 -  **Stable GPU usage**, thanks to smart reuse and routing  
 
 These results show a tightly integrated system with Redis, NIXL, and vLLM all contributing to intelligent, high-performance inference.
