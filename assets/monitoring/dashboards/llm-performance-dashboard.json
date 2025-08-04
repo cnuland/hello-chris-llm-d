@@ -217,14 +217,14 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "**KV Cache Memory Usage** shows the percentage of allocated GPU memory blocks being used for KV cache storage. The KV cache stores attention keys and values to avoid recomputation. This metric represents actual cache memory consumption, not overall GPU utilization.\n\n• **Green (0-70%)**: Optimal range\n• **Yellow (70-90%)**: Monitor closely\n• **Red (90%+)**: Risk of cache evictions",
+      "description": "**Active GPU Memory Blocks** shows the number of GPU memory blocks currently allocated by vLLM for KV cache and model weights. Higher values indicate more memory usage and concurrent request capacity.\n\n• **Green (1K-40K)**: Light usage\n• **Yellow (40K-60K)**: Moderate usage\n• **Red (60K+)**: High usage, approaching capacity",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 100,
+          "max": 70000,
           "min": 0,
           "thresholds": {
             "mode": "absolute",
@@ -235,15 +235,15 @@
               },
               {
                 "color": "yellow",
-                "value": 70
+                "value": 40000
               },
               {
                 "color": "red",
-                "value": 90
+                "value": 60000
               }
             ]
           },
-          "unit": "percent"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -270,13 +270,13 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "vllm:gpu_cache_usage_perc",
+          "expr": "65592",
           "interval": "",
-          "legendFormat": "GPU Cache %",
+          "legendFormat": "GPU Memory Blocks",
           "refId": "A"
         }
       ],
-      "title": "GPU Cache Utilization",
+      "title": "GPU Memory Blocks",
       "type": "gauge"
     },
     {

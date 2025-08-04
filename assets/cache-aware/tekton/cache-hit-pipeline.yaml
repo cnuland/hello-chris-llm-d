@@ -11,69 +11,41 @@ spec:
       description: "Gateway URL for testing"
       default: "https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com"
   steps:
-    - name: restart-llm-pods
+    - name: verify-system
       image: bitnami/kubectl:latest
       script: |
         #!/bin/bash
         set -e
         
-        echo "=== Restarting LLM-D pods for fresh metrics ==="
+        echo "=== Verifying LLM-D System Status ==="
         
-        # Find optimized vLLM v0.10.0 pods
-        OPTIMIZED_PODS=($(kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[?(@.spec.containers[0].image=="ghcr.io/llm-d/llm-d:v0.2.0")].metadata.name}'))
+        # Find running decode pods with vLLM containers
+        echo "Checking for running decode pods..."
+        DECODE_PODS=($(kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
         
-        if [ ${#OPTIMIZED_PODS[@]} -eq 0 ]; then
-            echo "❌ No optimized vLLM v0.10.0 pods found. Please deploy first."
+        if [ ${#DECODE_PODS[@]} -eq 0 ]; then
+            echo "❌ No decode pods found. Please deploy LLM-D first."
             exit 1
         fi
         
-        echo "Found ${#OPTIMIZED_PODS[@]} optimized pods to restart"
-        
-        # Delete all optimized pods
-        for pod in "${OPTIMIZED_PODS[@]}"; do
-            echo "Deleting pod: $pod"
-            kubectl delete pod $pod -n $(params.namespace)
+        echo "Found ${#DECODE_PODS[@]} running decode pods:"
+        for pod in "${DECODE_PODS[@]}"; do
+            echo "  - $pod"
         done
         
-        # Wait for pods to be recreated and running
-        echo "Waiting for pods to be recreated..."
-        sleep 10
+        # Check if pods have the vLLM container with the correct image
+        TEST_POD=${DECODE_PODS[0]}
+        VLLM_IMAGE=$(kubectl get pod $TEST_POD -n $(params.namespace) -o jsonpath='{.spec.containers[?(@.name=="vllm")].image}')
+        echo "✅ Test pod: $TEST_POD"
+        echo "✅ vLLM image: $VLLM_IMAGE"
         
-        # Wait for at least one optimized pod to be running
-        timeout=300
-        while [ $timeout -gt 0 ]; do
-            RUNNING_PODS=($(kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[?(@.spec.containers[0].image=="ghcr.io/llm-d/llm-d:v0.2.0")].metadata.name}'))
-            if [ ${#RUNNING_PODS[@]} -gt 0 ]; then
-                echo "✅ Pod ${RUNNING_PODS[0]} is running"
-                break
-            fi
-            echo "Waiting for pods to be ready... ($timeout seconds remaining)"
-            sleep 10
-            timeout=$((timeout - 10))
-        done
-        
-        if [ $timeout -le 0 ]; then
-            echo "❌ Timeout waiting for pods to be ready"
-            exit 1
+        # Verify pod is ready
+        READY_CHECK=$(kubectl get pod $TEST_POD -n $(params.namespace) -o jsonpath='{.status.containerStatuses[?(@.name=="vllm")].ready}')
+        if [[ "$READY_CHECK" == "true" ]]; then
+            echo "✅ vLLM container is ready"
+        else
+            echo "⚠️  vLLM container may not be fully ready"
         fi
-        
-        # Additional wait for vLLM to fully initialize
-        echo "Waiting additional 60 seconds for vLLM initialization..."
-        sleep 60
-        
-        # Check if pods are fully ready (2/2)
-        echo "Checking pod readiness..."
-        timeout=120
-        while [ $timeout -gt 0 ]; do
-            READY_CHECK=$(kubectl get pod ${RUNNING_PODS[0]} -n $(params.namespace) -o jsonpath='{.status.containerStatuses[?(@.name=="vllm")].ready}')
-            if [[ "$READY_CHECK" == "true" ]]; then
-                echo "✅ vLLM container is ready"
-                break
-            fi
-            echo "Waiting for vLLM container to be ready... ($timeout seconds remaining)"
-            sleep 10
-            timeout=$((timeout - 10))
-        done
 
     - name: run-cache-hit-test
       image: ubuntu:22.04
@@ -96,15 +68,15 @@ spec:
         NAMESPACE="$(params.namespace)"
         GATEWAY_URL="$(params.gateway-url)"
         
-        # Get current optimized pods
-        OPTIMIZED_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[?(@.spec.containers[0].image=="ghcr.io/llm-d/llm-d:v0.2.0")].metadata.name}'))
+        # Get current decode pods 
+        DECODE_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
         
-        if [ ${#OPTIMIZED_PODS[@]} -eq 0 ]; then
-            echo "❌ No optimized vLLM v0.10.0 pods found after restart."
+        if [ ${#DECODE_PODS[@]} -eq 0 ]; then
+            echo "❌ No decode pods found."
             exit 1
         fi
         
-        TEST_POD=${OPTIMIZED_PODS[0]}
+        TEST_POD=${DECODE_PODS[0]}
         echo "✅ Testing with fresh pod: $TEST_POD"
         echo ""
         
@@ -122,10 +94,16 @@ spec:
         echo "=== CACHE PERFORMANCE TEST ==="
         
         # Get baseline metrics (should be 0 for fresh pod)
-        BASELINE_QUERIES=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$')
-        BASELINE_HITS=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$')
+        BASELINE_QUERIES=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$' | head -1)
+        BASELINE_HITS=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$' | head -1)
         
-        echo "Fresh pod baseline metrics - Queries: ${BASELINE_QUERIES:-0}, Hits: ${BASELINE_HITS:-0}"
+        # Convert to integers for calculations
+        BASELINE_QUERIES=${BASELINE_QUERIES:-0}
+        BASELINE_HITS=${BASELINE_HITS:-0}
+        BASELINE_QUERIES=$(echo "$BASELINE_QUERIES" | cut -d. -f1)
+        BASELINE_HITS=$(echo "$BASELINE_HITS" | cut -d. -f1)
+        
+        echo "Fresh pod baseline metrics - Queries: $BASELINE_QUERIES, Hits: $BASELINE_HITS"
         echo ""
         
         echo "Running cache-optimized test via external gateway with session affinity..."
@@ -159,25 +137,31 @@ spec:
         # Get final metrics from all pods to verify routing
         echo "=== INDIVIDUAL POD METRICS ANALYSIS ==="
         
-        ALL_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[?(@.spec.containers[0].image=="ghcr.io/llm-d/llm-d:v0.2.0")].metadata.name}'))
+        ALL_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
         
         TOTAL_FINAL_QUERIES=0
         TOTAL_FINAL_HITS=0
         
         for pod in "${ALL_PODS[@]}"; do
             echo "Checking metrics for pod: $pod"
-            POD_QUERIES=$(kubectl exec $pod -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$')
-            POD_HITS=$(kubectl exec $pod -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$')
+            POD_QUERIES=$(kubectl exec $pod -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$' | head -1)
+            POD_HITS=$(kubectl exec $pod -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$' | head -1)
             
-            echo "  Pod $pod: Queries=${POD_QUERIES:-0}, Hits=${POD_HITS:-0}"
+            # Convert to integers for calculations
+            POD_QUERIES=${POD_QUERIES:-0}
+            POD_HITS=${POD_HITS:-0}
+            POD_QUERIES=$(echo "$POD_QUERIES" | cut -d. -f1)
+            POD_HITS=$(echo "$POD_HITS" | cut -d. -f1)
             
-            if [ "${POD_QUERIES:-0}" != "0" ]; then
-                POD_HIT_RATE=$(echo "scale=1; ${POD_HITS:-0} / ${POD_QUERIES:-0} * 100" | bc -l)
+            echo "  Pod $pod: Queries=$POD_QUERIES, Hits=$POD_HITS"
+            
+            if [ "$POD_QUERIES" -gt "0" ] 2>/dev/null; then
+                POD_HIT_RATE=$(echo "scale=1; $POD_HITS * 100 / $POD_QUERIES" | bc -l)
                 echo "  Pod $pod: Hit Rate=${POD_HIT_RATE}%"
             fi
             
-            TOTAL_FINAL_QUERIES=$(echo "$TOTAL_FINAL_QUERIES + ${POD_QUERIES:-0}" | bc -l)
-            TOTAL_FINAL_HITS=$(echo "$TOTAL_FINAL_HITS + ${POD_HITS:-0}" | bc -l)
+            TOTAL_FINAL_QUERIES=$((TOTAL_FINAL_QUERIES + POD_QUERIES))
+            TOTAL_FINAL_HITS=$((TOTAL_FINAL_HITS + POD_HITS))
         done
         
         echo ""
@@ -188,18 +172,21 @@ spec:
         FINAL_HITS=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$')
         
         # Calculate overall hit rate from aggregate metrics
-        if (( $(echo "$TOTAL_FINAL_QUERIES > 0" | bc -l) )); then
-            OVERALL_HIT_RATE=$(echo "scale=1; $TOTAL_FINAL_HITS / $TOTAL_FINAL_QUERIES * 100" | bc -l)
+        if [ "$TOTAL_FINAL_QUERIES" -gt "0" ] 2>/dev/null; then
+            OVERALL_HIT_RATE=$(echo "scale=1; $TOTAL_FINAL_HITS * 100 / $TOTAL_FINAL_QUERIES" | bc -l)
             echo ""
             echo "🎉 Overall Cache Hit Rate: ${OVERALL_HIT_RATE}%"
             
-            if (( $(echo "$OVERALL_HIT_RATE >= 80" | bc -l) )); then
+            # Convert to integer for comparison
+            HIT_RATE_INT=$(echo "$OVERALL_HIT_RATE" | cut -d. -f1)
+            
+            if [ "$HIT_RATE_INT" -ge "80" ] 2>/dev/null; then
                 echo "🏆 EXCELLENT: High cache efficiency achieved!"
                 EXIT_CODE=0
-            elif (( $(echo "$OVERALL_HIT_RATE >= 60" | bc -l) )); then
+            elif [ "$HIT_RATE_INT" -ge "60" ] 2>/dev/null; then
                 echo "✅ VERY GOOD: Good cache performance"
                 EXIT_CODE=0
-            elif (( $(echo "$OVERALL_HIT_RATE >= 40" | bc -l) )); then
+            elif [ "$HIT_RATE_INT" -ge "40" ] 2>/dev/null; then
                 echo "✅ GOOD: Cache working, room for improvement"
                 EXIT_CODE=0
             else
