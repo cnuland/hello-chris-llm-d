@@ -32,7 +32,7 @@ In this blog post, we’ll cover:
 
 In traditional deployments, even if KV-caches are enabled inside the model server (like vLLM), the **gateway is unaware of cache state**. That leads to:
 
-- Random routing (e.g., round-robin)  
+- Round-robin routing or explicit sticky sessions  
 - Frequent **cache misses**  
 - Repeated compute for common prefixes  
 - Unnecessary GPU memory use  
