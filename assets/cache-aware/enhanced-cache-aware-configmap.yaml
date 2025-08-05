@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: basic-gpu-with-hybrid-cache
+  name: basic-gpu-with-enhanced-cache-routing
   namespace: llm-d
   labels:
     app.kubernetes.io/component: modelservice

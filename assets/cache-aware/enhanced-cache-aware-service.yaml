@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llama-3-2-1b-cache-aware-service-enhanced
+  namespace: llm-d
+  labels:
+    app: cache-aware-enhanced
+    llmd.ai/gather-metrics: "true"
+  annotations:
+    # Istio annotations for better session handling
+    networking.istio.io/exportTo: "*"
+    # Service mesh optimizations
+    service.istio.io/canonical-name: "llama-3-2-1b-decode"
+    service.istio.io/canonical-revision: "latest"
+spec:
+  type: ClusterIP
+  ports:
+  - name: vllm-proxy
+    port: 8000
+    protocol: TCP
+    targetPort: 8000
+  - name: vllm-direct
+    port: 8001
+    protocol: TCP
+    targetPort: 8001
+  - name: metrics
+    port: 8002
+    protocol: TCP
+    targetPort: 8002
+  selector:
+    llm-d.ai/model: llama-3-2-1b
+    llm-d.ai/role: decode
+  # Enhanced session affinity with stricter timeout
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      # Reduce timeout to 1 hour for more predictable behavior
+      timeoutSeconds: 3600
+  # Optimize for session stickiness
+  publishNotReadyAddresses: false
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: llama-3-2-1b-cache-aware-service-enhanced
+  namespace: llm-d
+# This will be automatically populated by k8s, but we define structure
+subsets: []

@@ -25,11 +25,11 @@ spec:
     namespace: llm-d
   rules:
   - backendRefs:
-    - group: ""
-      kind: Service
-      name: llama-3-2-1b-cache-aware-service
-      port: 8000
-      weight: 1
+      - group: ""
+        kind: Service
+        name: llama-3-2-1b-epp-service
+        port: 9002
+        weight: 1
     matches:
     - path:
         type: PathPrefix

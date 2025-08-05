@@ -1,0 +1,91 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: cache-pod-restart
+spec:
+  params:
+    - name: namespace
+      description: "Namespace where LLM-D is deployed"
+      default: "llm-d"
+  steps:
+    - name: restart-decode-pods
+      image: bitnami/kubectl:latest
+      script: |
+        #!/bin/bash
+        set -e
+        
+        echo "🔄 CACHE-AWARE ROUTING: Pod Restart Pipeline"
+        echo "============================================"
+        echo ""
+        
+        echo "=== Restarting Decode Pods for Fresh Metrics ==="
+        
+        # Show current pods before restart
+        echo "Current decode pods before restart:"
+        kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' -o wide
+        echo ""
+        
+        # Restart decode deployment to get fresh pods with clean metrics
+        echo "Restarting decode deployment..."
+        kubectl rollout restart deployment -l llm-d.ai/role=decode -n $(params.namespace)
+        
+        echo ""
+        echo "✅ Deployment restart initiated!"
+        echo ""
+        echo "⏳ Waiting for rollout to complete (this may take 5-10 minutes)..."
+        echo "   - Pods need to download large models (~1-2GB each)"
+        echo "   - vLLM containers need to initialize with optimized cache config"
+        echo ""
+        
+        # Wait for rollout to complete with extended timeout
+        kubectl rollout status deployment -l llm-d.ai/role=decode -n $(params.namespace) --timeout=600s
+        
+        # Wait additional time for pods to be fully ready and models loaded
+        echo ""
+        echo "⏳ Waiting for pods to be fully ready and models loaded (60s)..."
+        sleep 60
+        
+        # Verify new pods are running and ready
+        echo ""
+        echo "=== Fresh Decode Pods After Restart ==="
+        DECODE_PODS=($(kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
+        
+        if [ ${#DECODE_PODS[@]} -eq 0 ]; then
+            echo "❌ No running decode pods found after restart!"
+            exit 1
+        fi
+        
+        echo "Found ${#DECODE_PODS[@]} fresh decode pods:"
+        for pod in "${DECODE_PODS[@]}"; do
+            AGE=$(kubectl get pod $pod -n $(params.namespace) -o jsonpath='{.status.startTime}')
+            READY_STATUS=$(kubectl get pod $pod -n $(params.namespace) -o jsonpath='{.status.containerStatuses[?(@.name=="vllm")].ready}')
+            echo "  📦 $pod"
+            echo "     Started: $AGE"
+            echo "     vLLM Ready: $READY_STATUS"
+        done
+        
+        echo ""
+        echo "🎉 Pod restart complete - fresh pods with clean metrics ready!"
+        echo ""
+        echo "Next steps:"
+        echo "1. Wait 2-3 minutes for models to fully load"
+        echo "2. Run the cache test pipeline: cache-hit-test-pipeline"
+        echo ""
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: cache-pod-restart-pipeline
+spec:
+  params:
+    - name: namespace
+      description: "Namespace where LLM-D is deployed"
+      default: "llm-d"
+  tasks:
+    - name: restart-pods
+      taskRef:
+        name: cache-pod-restart
+      params:
+        - name: namespace
+          value: "$(params.namespace)"

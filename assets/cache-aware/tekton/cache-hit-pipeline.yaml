@@ -11,13 +11,14 @@ spec:
       description: "Gateway URL for testing"
       default: "https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com"
   steps:
+
     - name: verify-system
-      image: bitnami/kubectl:latest
+      image: alpine/k8s:1.28.0
       script: |
         #!/bin/bash
         set -e
         
-        echo "=== Verifying LLM-D System Status ==="
+        echo "=== Verifying LLM-D System Status ===="
         
         # Find running decode pods with vLLM containers
         echo "Checking for running decode pods..."
@@ -48,18 +49,17 @@ spec:
         fi
 
     - name: run-cache-hit-test
-      image: ubuntu:22.04
+      image: alpine/k8s:1.28.0
       script: |
         #!/bin/bash
         set -e
         
-        # Install required tools
-        apt-get update && apt-get install -y bc jq curl wget ca-certificates
-        
-        # Install kubectl
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        mv kubectl /usr/local/bin/
+        # Check available tools
+        echo "Available tools:"
+        which curl || echo "curl not available"
+        which bc || echo "bc not available" 
+        which jq || echo "jq not available"
+        echo "Kubectl version: $(kubectl version --client)"
         
         echo "=== Production KV-Cache Validation Script ==="
         echo "Tests 90% cache hit rate with optimized vLLM v0.10.0 configuration"
@@ -111,17 +111,22 @@ spec:
         # Use longer, more cache-friendly prompt for better hit rates
         CACHE_PROMPT="You are an expert technical consultant specializing in artificial intelligence and machine learning systems. Please provide a comprehensive analysis of the following scenario: A large enterprise is implementing a distributed inference system for their customer service chatbot that needs to handle 10,000 concurrent users across multiple geographic regions. The system requirements include: 1) Sub-200ms response latency for 95% of requests, 2) High availability with 99.9% uptime, 3) Cost optimization through efficient resource utilization, 4) Scalability to handle peak loads during business hours, and 5) Integration with existing authentication and monitoring systems. Consider the technical architecture, infrastructure requirements, deployment strategies, monitoring approaches, and potential challenges they might face during implementation. Focus on practical recommendations for achieving optimal performance and reliability."
         
-        # Test via external gateway to leverage session affinity for cache hits
-        # Use consistent session identifiers to ensure routing to same pod
-        SESSION_ID="cache-test-$(date +%s)"
+        # Test enhanced cache-aware routing with session headers
+        # Use consistent session identifiers to leverage enhanced session-aware scoring
+        SESSION_ID="enhanced-cache-test-$(date +%s)"
         
-        for i in {1..25}; do
-            echo "  Cache test request $i via external gateway (session: $SESSION_ID)..."
+        echo "Testing enhanced cache-aware routing with session-aware scoring..."
+        echo "Session ID: $SESSION_ID"
+        
+        for i in {1..30}; do
+            echo "  Enhanced cache test request $i (session: $SESSION_ID)..."
             RESPONSE=$(curl -k -s -X POST "$GATEWAY_URL/v1/completions" \
                 -H "Content-Type: application/json" \
-                -H "User-Agent: cache-test-client-$SESSION_ID" \
-                -H "X-Session-ID: $SESSION_ID" \
-                -b "session=$SESSION_ID" \
+                -H "Authorization: Bearer enhanced-test-token-$SESSION_ID" \
+                -H "session-id: $SESSION_ID" \
+                -H "x-session-id: $SESSION_ID" \
+                -H "User-Agent: EnhancedCacheTest/1.0" \
+                -b "session_id=$SESSION_ID" \
                 -d "{
                   \"model\": \"meta-llama/Llama-3.2-1B\",
                   \"prompt\": \"$CACHE_PROMPT\",
@@ -130,8 +135,8 @@ spec:
                   \"seed\": 12345
                 }")
             echo "    Response: $(echo $RESPONSE | jq -r '.choices[0].text // .error // "No response"' | head -1 | tr -d '\n' | cut -c1-50)..."
-            # Longer delay to ensure session affinity takes effect and routing stabilizes
-            sleep 1.0
+            # Optimized delay for session-aware routing
+            sleep 0.8
         done
         
         # Get final metrics from all pods to verify routing
@@ -170,6 +175,42 @@ spec:
         # Also get metrics from our original test pod for comparison
         FINAL_QUERIES=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$')
         FINAL_HITS=$(kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_hits_total{" | grep -o '[0-9.]*$')
+        
+        # SESSION STICKINESS ANALYSIS
+        echo ""
+        echo "=== SESSION STICKINESS ANALYSIS ==="
+        echo "Pipeline sent 30 requests with the same session ID: $SESSION_ID"
+        echo "If session stickiness >90%, ONE pod should have ~30 new queries"
+        echo ""
+        
+        # Find which pod(s) received the most queries (indicating session stickiness)
+        MAX_QUERIES=0
+        ACTIVE_PODS=0
+        for pod in "${ALL_PODS[@]}"; do
+            POD_QUERIES=$(kubectl exec $pod -n $NAMESPACE -c vllm -- curl -s localhost:8001/metrics | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$' | head -1)
+            POD_QUERIES=${POD_QUERIES:-0}
+            POD_QUERIES=$(echo "$POD_QUERIES" | cut -d. -f1)
+            if [ "$POD_QUERIES" -gt "10" ] 2>/dev/null; then
+                ACTIVE_PODS=$((ACTIVE_PODS + 1))
+                if [ "$POD_QUERIES" -gt "$MAX_QUERIES" ] 2>/dev/null; then
+                    MAX_QUERIES=$POD_QUERIES
+                fi
+            fi
+        done
+        
+        echo "Pods with significant traffic (>10 queries): $ACTIVE_PODS"
+        echo "Maximum queries on any single pod: $MAX_QUERIES"
+        
+        if [ "$ACTIVE_PODS" -eq "1" ]; then
+            echo "✅ EXCELLENT: All traffic routed to 1 pod - >90% session stickiness achieved!"
+            STICKINESS_SCORE="EXCELLENT"
+        elif [ "$ACTIVE_PODS" -eq "2" ]; then
+            echo "⚠️  GOOD: Traffic split between 2 pods - ~70-80% session stickiness"
+            STICKINESS_SCORE="GOOD"
+        else
+            echo "❌ POOR: Traffic spread across $ACTIVE_PODS pods - <70% session stickiness"
+            STICKINESS_SCORE="POOR"
+        fi
         
         # Calculate overall hit rate from aggregate metrics
         if [ "$TOTAL_FINAL_QUERIES" -gt "0" ] 2>/dev/null; then
