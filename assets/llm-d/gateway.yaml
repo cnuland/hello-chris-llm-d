@@ -1,0 +1,59 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+  name: llm-d-gateway
+  namespace: llm-d
+spec:
+  gatewayClassName: istio
+  listeners:
+  - allowedRoutes:
+      namespaces:
+        from: Same
+    name: http
+    port: 80
+    protocol: HTTP
+  addresses:
+  - type: Hostname
+    value: a8997b45f40f341d28fb19d938885f49-1817554148.us-east-1.elb.amazonaws.com
+  conditions:
+  - lastTransitionTime: "2025-07-29T21:06:47Z"
+    message: Resource accepted
+    observedGeneration: 1
+    reason: Accepted
+    type: Accepted
+  - lastTransitionTime: "2025-07-29T21:06:50Z"
+    message: Resource programmed, assigned to service(s) llm-d-gateway-istio.llm-d.svc.cluster.local:80
+    observedGeneration: 1
+    reason: Programmed
+    type: Programmed
+  listeners:
+  - attachedRoutes: 1
+    conditions:
+    - lastTransitionTime: "2025-07-29T21:06:47Z"
+      message: No errors found
+      observedGeneration: 1
+      reason: Accepted
+      type: Accepted
+    - lastTransitionTime: "2025-07-29T21:06:47Z"
+      message: No errors found
+      observedGeneration: 1
+      reason: NoConflicts
+      type: Conflicted
+    - lastTransitionTime: "2025-07-29T21:06:47Z"
+      message: No errors found
+      observedGeneration: 1
+      reason: Programmed
+      type: Programmed
+    - lastTransitionTime: "2025-07-29T21:06:47Z"
+      message: No errors found
+      observedGeneration: 1
+      reason: ResolvedRefs
+      type: ResolvedRefs
+    name: http
+    supportedKinds:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+    - group: gateway.networking.k8s.io
+      kind: GRPCRoute

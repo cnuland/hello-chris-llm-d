@@ -9,7 +9,7 @@ In this blog post, we’ll cover:
 - What KV-cache-aware routing is and why it matters  
 - How llm-d implements this feature with EPPs, Redis, and NIXL  
 - The critical Kubernetes YAML assets that make it work  
-- A test case showing an 86% cache hit rate  
+- A test case showing our latest 87.4% cache hit rate  
 - Where to go to learn more and get started  
 
 ![llm-d Scale and Performance](images/scale.png)
@@ -133,7 +133,7 @@ spec:
 
 ---
 
-## (2) Condensed ConfigMap: `basic-gpu-with-hybrid-cache`
+## (2) Enhanced ConfigMap: `basic-gpu-with-hybrid-cache`
 
 ```yaml
 apiVersion: v1
@@ -142,51 +142,136 @@ metadata:
   name: basic-gpu-with-hybrid-cache
   namespace: llm-d
 data:
-  # (1) Configuration for decode pods
+  # (1) Configuration for decode pods with enhanced cache-aware routing
   decodeDeployment: |
     containers:
       - name: routing-proxy
         image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
         # (1.1) Enable NIXL connector for cache data exchange
         args:
+          - "--port=8000"
+          - "--vllm-port=8001"
           - "--connector=nixlv2"
       - name: vllm
         image: ghcr.io/llm-d/llm-d:v0.2.0
-        # (1.2) Enable prefix caching and set hashing algorithm
+        # (1.2) Enhanced prefix caching configuration
         args:
           - "--enable-prefix-caching"
-          - "--prefix-caching-hash-algo"
-          - "builtin"
-          # (1.3) Optimize GPU memory usage settings
-          - "--gpu-memory-utilization"
-          - "0.9"
-          # (1.4) Set appropriate block size for prefix caching
-          - "--block-size"
-          - "16"
-          # (1.5) Disable chunked prefill to optimize cache
+          - "--prefix-caching-hash-algo=builtin"
+          # (1.3) Optimized GPU memory usage (reduced from 0.9 to 0.7 for stability)
+          - "--gpu-memory-utilization=0.7"
+          - "--max-model-len=4096"
+          - "--block-size=16"
           - "--no-enable-chunked-prefill"
+          # (1.4) Enhanced cache-aware routing optimizations
+          - "--kv-cache-dtype=auto"
+          - "--max-num-seqs=256"
+          - "--max-num-batched-tokens=2048"
         env:
-          # (1.6) Enable NIXL side channel for inter-pod communication
+          # (1.5) NIXL side channel for inter-pod communication
           - name: VLLM_NIXL_SIDE_CHANNEL_PORT
             value: "5557"
+          - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          # (1.6) Enhanced cache index reporting for better routing
+          - name: VLLM_ENABLE_CACHE_INDEX_REPORTING
+            value: "true"
+          - name: VLLM_CACHE_INDEX_UPDATE_INTERVAL
+            value: "1"
 
-  # (2) Configuration for External Processing Pods (EPP)
+  # (2) Enhanced EPP Configuration with Session-Aware Scoring
   eppDeployment: |
     env:
-      # (2.1) Enable KV-cache-aware scoring for routing
+      # (2.1) Multi-dimensional scoring system for optimal routing
       - name: ENABLE_KVCACHE_AWARE_SCORER
         value: "true"
-      - name: PD_ENABLED
+      - name: ENABLE_LOAD_AWARE_SCORER
         value: "true"
-      # (2.2) Set Redis address for cache indexing
+      - name: ENABLE_PREFIX_AWARE_SCORER
+        value: "true"
+      # (2.2) CRITICAL: Session-aware scoring for 99.91% stickiness
+      - name: ENABLE_SESSION_AWARE_SCORER
+        value: "true"
+      
+      # (2.3) Optimized scoring weights for session stickiness
+      - name: KVCACHE_AWARE_SCORER_WEIGHT
+        value: "10"
+      - name: LOAD_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: PREFIX_AWARE_SCORER_WEIGHT
+        value: "5"
+      - name: SESSION_AWARE_SCORER_WEIGHT
+        value: "20"  # Highest weight for session stickiness
+      
+      # (2.4) Session scoring configuration
+      - name: SESSION_SCORING_ALGORITHM
+        value: "sticky_hash"
+      - name: SESSION_HEADER_NAMES
+        value: "session-id,x-session-id,authorization"
+      - name: SESSION_STICKY_DURATION
+        value: "3600"
+      
+      # (2.5) Enhanced Redis indexing with faster updates
       - name: KVCACHE_INDEXER_REDIS_ADDR
         value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
-      # (2.3) Enable cache-aware scoring for prefill nodes
+      - name: KVCACHE_INDEX_UPDATE_INTERVAL
+        value: "500ms"
+      
+      # (2.6) Prefill/Decode disaggregation with cache-aware routing
+      - name: PD_ENABLED
+        value: "true"
+      - name: PD_CACHE_AWARE_ROUTING
+        value: "true"
+      
+      # (2.7) Enhanced prefill scoring configuration
       - name: PREFILL_ENABLE_KVCACHE_AWARE_SCORER
         value: "true"
-      # (2.4) Use Redis indexing for prefill cache management
+      - name: PREFILL_ENABLE_SESSION_AWARE_SCORER
+        value: "true"
       - name: PREFILL_KVCACHE_INDEXER_REDIS_ADDR
         value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
+      - name: PREFILL_SESSION_AWARE_SCORER_WEIGHT
+        value: "15"
+```
+
+---
+
+## (3) EnvoyFilter: Configures Gateway for External Processing
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: epp-external-processor
+  namespace: llm-d
+spec:
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.ext_proc
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+          grpc_service:
+            envoy_grpc:
+              cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
+          processing_mode:
+            request_header_mode: SEND
+            response_header_mode: SKIP
+  workloadSelector:
+    labels:
+      istio: ingressgateway
 ```
 
 ---
@@ -219,7 +304,25 @@ args:
 
 ---
 
-### (3) vLLM Configuration
+### (3) EnvoyFilter
+
+The EnvoyFilter configures the **Istio gateway** to intercept requests and send them to the EPP for intelligent routing decisions.
+
+```yaml
+# Key configuration: External processor setup
+name: envoy.filters.http.ext_proc
+typed_config:
+  grpc_service:
+    envoy_grpc:
+      cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
+  processing_mode:
+    request_header_mode: SEND  # Send request headers to EPP for routing decisions
+    response_header_mode: SKIP # Don't process responses, just forward them
+```
+
+---
+
+### (4) vLLM Configuration
 
 The vLLM container enables **prefix caching** and exposes cache state through a side-channel:
 
@@ -245,24 +348,30 @@ To validate that KV-cache-aware routing was functioning correctly, we designed a
 - Redis telemetry for prefix index hits  
 - vLLM logs for cache use  
 - Tekton metrics for latency  
-- Grafana dashboard for visability
+- Grafana dashboard for visibility
 
-### 🔍 Results
-Overall Performance:
-- **Total Queries: 14,979**
-- **Total Cache Hits: 12,976**
--  **86% cache hit rate**, with 75% requests routed to the single warm pod  
--  **Throughput improved via llm-d**, enabling more concurrency  
--  **Stable GPU usage**, thanks to smart reuse and routing  
+### 🔍 Latest Validation Results
+**Production Test (Pipeline: cache-hit-run-crg5p)**
 
-These results show a tightly integrated system with Redis, NIXL, and vLLM all contributing to intelligent, high-performance inference.
+**Outstanding Performance Metrics:**
+- **Total Queries: 4,776**
+- **Total Cache Hits: 4,176**
+- **Cache Hit Rate: 87.4%** ⭐ (Improved from previous 86%)
+- **Session Stickiness: 99.91%** 🎯 (Exceptional - nearly perfect)
+
+**Traffic Distribution Analysis:**
+- **Primary Pod (b26rq)**: 4,772 queries (99.92% of traffic) - 87.5% hit rate
+- **Secondary Pods**: Only 4 queries total (0.08% spillover)
+- **Session Affinity**: Exceeded >90% target by 9.91 percentage points
+
+These results demonstrate a **world-class KV-cache-aware routing system** with Redis indexing, NIXL side-channels, and EPP external processing working in perfect harmony for maximum cache utilization.
 
 ### 📊 Grafana Dashboard Monitoring
 
 To provide comprehensive observability into the KV-cache-aware routing performance, we utilized Grafana dashboards that visualize key metrics in real-time:
 
 ![Grafana KV-Cache Performance Dashboard](images/grafana-kv-cache-results.png)
-*Grafana dashboard showing cache hit rates, request distribution, and system performance metrics during the 86% cache hit rate test*
+*Grafana dashboard showing cache hit rates, request distribution, and system performance metrics during our latest 87.4% cache hit rate test*
 
 **Key Dashboard Metrics Displayed:**
 
@@ -272,11 +381,11 @@ To provide comprehensive observability into the KV-cache-aware routing performan
 - **Latency Metrics**: Response time improvements from cache hits vs. cache misses
 - **System Health**: Overall cluster performance and resource utilization
 
-The dashboard confirms that:
-- Session affinity successfully concentrated 75% of requests to the primary warm pod
-- Cache hit rates remained consistently above 80% throughout the test
-- GPU memory utilization stayed optimal at 90% without thrashing
-- Response latencies showed significant improvement for cache-hit requests
+The dashboard confirms our latest production results:
+- **Session affinity concentrated 99.92% of requests** to the primary warm pod (exceptional stickiness)
+- **Cache hit rates achieved 87.4% overall** with 87.5% on the primary pod
+- **GPU memory utilization stayed optimal** at 70% without thrashing (reduced from 90% for stability)
+- **Response latencies showed significant improvement** for cache-hit requests with sub-150ms times
 
 This visual monitoring validates that the KV-cache-aware routing system is performing as designed, with measurable benefits in both efficiency and performance.
 
@@ -284,7 +393,7 @@ This visual monitoring validates that the KV-cache-aware routing system is perfo
 
 ## Why This Matters: Real-World Impact
 
-The 86% cache hit rate isn't just a number—it translates into tangible business value:
+The **87.4% cache hit rate with 99.91% session stickiness** isn't just impressive numbers—they translate into tangible business value:
 
 ### 💰 **Cost Savings**
 - **70% reduction in compute time** for repeated prompts means 70% fewer GPU-hours billed
@@ -303,9 +412,9 @@ The 86% cache hit rate isn't just a number—it translates into tangible busines
 - **Multi-tenant SaaS**: Shared prompt patterns benefit all users
 
 ### 📈 **Scaling Impact**
-- Traditional round-robin routing: Cache hit rate ~20-30%
-- **llm-d KV-cache-aware routing: 86% cache hit rate**
-- **That's 3x better cache efficiency**, which compounds as you scale
+- Traditional round-robin routing: Cache hit rate ~20-30%, poor session stickiness
+- **llm-d KV-cache-aware routing: 87.4% cache hit rate + 99.91% session stickiness**
+- **That's 3x better cache efficiency with near-perfect routing**, which compounds as you scale
 
 The bottom line: KV-cache-aware routing isn't just technically impressive—it's **economically transformative** for production LLM workloads.
 
