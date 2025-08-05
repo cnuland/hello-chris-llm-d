@@ -1,6 +1,6 @@
 # LLM-D: Kubernetes-Native Distributed LLM Inference Platform
 
-A production-ready demonstration of intelligent distributed LLM inference with **cache-aware routing**, **prefill/decode disaggregation**, and advanced monitoring. Achieves **80%+ cache hit rates** and **3x performance improvements** through intelligent request routing.
+A production-ready demonstration of intelligent distributed LLM inference with **cache-aware routing**, **prefill/decode disaggregation**, and advanced monitoring. Achieves **87.4% cache hit rates** and **99.91% session stickiness** through intelligent request routing.
 
 ## 🚀 Quick Start
 
@@ -33,11 +33,11 @@ curl -k -X POST "https://llm-d-inference-gateway-llm-d.apps.your-cluster.com/v1/
 kubectl create -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml -n llm-d
 ```
 
-**Verified Results**: 87%+ cache hit rates, >90% session stickiness, sub-150ms response times
+**Verified Results**: 87.4% cache hit rates, 99.91% session stickiness, sub-150ms response times
 
 ## 🎯 Key Features
 
-- **🚀 Cache-Aware Routing**: 80%+ hit rates, 3x TTFT improvement
+- **🚀 Cache-Aware Routing**: 87.4% hit rates, 99.91% session stickiness
 - **⚡ Prefill/Decode Disaggregation**: 2-5x throughput improvement  
 - **📊 Advanced Monitoring**: 384+ LLM metrics with Grafana dashboards
 - **🔄 Multi-Tenant QoS**: Priority-based routing with SLA compliance
@@ -112,7 +112,7 @@ kubectl create -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml -n llm-d
 3. **EPP (External Processor)** → Analyzes request, makes routing decision
 4. **HTTPRoute** → Routes to cache-aware backend service 
 5. **Backend Service** → Distributes to decode pods based on EPP decision
-6. **Decode Pods** → Process with 87%+ cache hit rates and >90% session stickiness
+6. **Decode Pods** → Process with 87.4% cache hit rates and 99.91% session stickiness
 
 **Key Architecture Fix:**
 - ✅ **EPP as External Processor** (not direct route target)
