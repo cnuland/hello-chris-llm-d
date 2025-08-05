@@ -19,7 +19,7 @@ In this blog post, we’ll cover:
 
 ## What Is llm-d?
 
-**llm-d (Large Language Model Disaggregator)** is an open source project built by Red Hat and the AI infrastructure community to manage large-scale LLM inference using cloud-native patterns. llm-d introduces:
+**llm-d** is an open source project built by Red Hat and the AI infrastructure community to manage large-scale LLM inference using cloud-native patterns. llm-d introduces:
 
 - Disaggregated **prefill and decode** workloads  
 - **Multi-model** and multi-tenant isolation  
