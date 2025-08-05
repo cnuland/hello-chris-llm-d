@@ -1,5 +1,7 @@
 # Mastering KV-Cache-Aware Routing with llm-d
 
+*By Christopher Nuland, Technical Marketing Manager for Red Hat AI*
+
 ## Introduction
 
 In the era of large-scale AI inference, ensuring efficiency across distributed environments is no longer optional—it's a necessity. As workloads grow, so does the need for smarter scheduling and memory reuse strategies. Enter **llm-d**, a Kubernetes-native framework for scalable, intelligent LLM inference. One of its most powerful capabilities is **KV-cache-aware routing**, which reduces latency and improves throughput by directing requests to pods that already hold relevant context in GPU memory.
