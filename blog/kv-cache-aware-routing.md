@@ -45,14 +45,15 @@ This breaks down under high concurrency or workloads with shared prompts (like R
 
 ## The Solution: KV-Cache-Aware Routing
 
-llm-d enables **state-aware request scheduling** by introducing a few key components:
+llm-d enables **state-aware request scheduling** by introducing the **KV-Cache Indexer**, a high-performance system that maintains a global, near-real-time view of KV-Cache block locality across a fleet of vLLM pods. The key components include:
 
-- An **EPP (External Processing Pod)** that acts as an intelligent router  
-- A **Redis-based cache indexer** that tracks what each pod has cached  
-- A **NIXL side-channel** between pods to transfer KV data when needed  
-- **Configurable routing scorers** that balance reuse and load  
+- A **KV-Cache Indexer** that orchestrates intelligent scoring of pods based on cached blocks
+- A **ZMQ-based event system** that processes cache events from vLLM pods in real-time
+- An **in-memory index** that maps KV-block hashes to pod locations using two-level LRU caching
+- A **tokenization subsystem** with async processing and prefix caching for performance
+- A **scoring algorithm** that uses longest consecutive prefix matching to rank pods
 
-The result is a scheduling layer that favors pods with warm cache states—cutting inference times and GPU load.
+The result is a scheduling layer that finds the pod with the longest sequence of relevant KV-blocks already cached—dramatically reducing inference times and GPU load.
 
 ![KV-Cache-Aware Routing Architecture](images/llm-d.jpg)
 *Complete KV-cache-aware routing architecture showing the flow from client requests through EPP intelligent routing to decode/prefill pods with Redis coordination*
@@ -71,171 +72,182 @@ To follow this guide, you should have:
 
 ## 🔧 Core Configurations
 
-### (1) ModelService: Declares Your Inference Setup
+### (1) Helm Values: Modern v0.2.0 Configuration
 
 ```yaml
-apiVersion: llm-d.ai/v1alpha1
-kind: ModelService
-metadata:
-  name: llama-3-2-1b
-  namespace: llm-d
-spec:
-  # (1) Reference to KV-cache-aware configuration template
-  baseConfigMapRef:
-    name: basic-gpu-with-hybrid-cache
+# values.yaml - Official llm-d v0.2.0 configuration
+multinode: false
 
-  # (2) Hugging Face model definition
-  modelArtifacts:
-    uri: "hf://meta-llama/Llama-3.2-1B"
-    size: 50Gi
-    authSecretName: "llm-d-hf-token"
+modelArtifacts:
+  uri: "hf://meta-llama/Llama-3.2-1B"
+  size: 50Gi
+  authSecretName: "llm-d-hf-token"
 
-  # (3) GPU-based decode pods (vLLM + sidecar)
-  decode:
-    replicas: 3
-    acceleratorTypes:
-      labelKey: nvidia.com/gpu.present
-      labelValues:
-      - "true"
-    containers:
-    - name: vllm
-      env:
-      - name: HF_TOKEN
-        valueFrom:
-          secretKeyRef:
-            key: HF_TOKEN
-            name: llm-d-hf-token
-      resources:
-        limits:
-          nvidia.com/gpu: "1"
-        requests:
-          nvidia.com/gpu: "1"
+routing:
+  modelName: meta-llama/Llama-3.2-1B
+  servicePort: 8000
 
-  # (4) Prefill pods to optimize GPU usage
-  prefill:
-    replicas: 2
-    containers:
-    - name: vllm
-      env:
-      - name: HF_TOKEN
-        valueFrom:
-          secretKeyRef:
-            key: HF_TOKEN
-            name: llm-d-hf-token
+  # (1) KV-cache-aware routing proxy configuration
+  proxy:
+    image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
+    secure: false
+    connector: nixlv2  # NIXL connector for cache transfer
 
-  # (5) Gateway routing configuration that triggers EPP deployment
-  routing:
-    modelName: llama-3-2-1b
-    gatewayRefs:
+  parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: llm-d-gateway
-      namespace: llm-d
+
+  # (2) Gateway and routing configuration
+  inferenceModel:
+    create: true
+  
+  inferencePool:
+    create: true
+    name: cache-aware-pool
+  
+  httpRoute:
+    create: true
+  
+  # (3) EPP for intelligent cache-aware routing
+  epp:
+    create: true
+
+# (4) Decode pods with KV-cache optimization
+decode:
+  create: true
+  replicas: 3
+  monitoring:
+    podmonitor:
+      enabled: true
+      portName: "metrics"
+      path: "/metrics"
+      interval: "30s"
+  containers:
+  - name: "vllm"
+    image: "ghcr.io/llm-d/llm-d:v0.2.0"
+    modelCommand: vllmServe
+    args:
+      # (4.1) KV-cache optimizations for maximum cache hit rates
+      - "--enable-prefix-caching"
+      - "--prefix-caching-hash-algo=builtin"
+      - "--block-size=16"              # Optimized for cache efficiency
+      - "--gpu-memory-utilization=0.7"  # Stable GPU memory usage
+      - "--max-model-len=4096"
+      - "--no-enable-chunked-prefill"   # Better cache consistency
+      - "--kv-cache-dtype=auto"
+      - "--max-num-seqs=256"
+      - "--enforce-eager"               # Stable execution mode
+      # (4.2) NIXL KV-transfer configuration for inter-pod cache sharing
+      - "--kv-transfer-config"
+      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
+    env:
+      # (4.3) NIXL side channel configuration
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      # (4.4) Hash seed for consistent cache indexing
+      - name: PYTHONHASHSEED
+        value: "42"
+      # (4.5) CUDA configuration for optimal performance
+      - name: CUDA_VISIBLE_DEVICES
+        value: "0"
+      - name: UCX_TLS
+        value: "cuda_ipc,cuda_copy,tcp"
+      - name: VLLM_LOGGING_LEVEL
+        value: DEBUG
+    ports:
+      - containerPort: 5557
+        protocol: TCP
+      - containerPort: 8200
+        name: metrics
+        protocol: TCP
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
+      requests:
+        nvidia.com/gpu: "1"
+    mountModelVolume: true
+    volumeMounts:
+    - name: metrics-volume
+      mountPath: /.config
+    - name: torch-compile-cache
+      mountPath: /.cache
+  volumes:
+  - name: metrics-volume
+    emptyDir: {}
+  - name: torch-compile-cache
+    emptyDir: {}
+
+# (5) Prefill pods for workload disaggregation
+prefill:
+  create: true
+  replicas: 2
+  containers:
+  - name: "vllm"
+    image: "ghcr.io/llm-d/llm-d:v0.2.0"
+    modelCommand: vllmServe
+    args:
+      - "--enforce-eager"
+      - "--kv-transfer-config"
+      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
+    env:
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: PYTHONHASHSEED
+        value: "42"
+      - name: CUDA_VISIBLE_DEVICES
+        value: "0"
+    resources:
+      limits:
+        nvidia.com/gpu: "1"
+      requests:
+        nvidia.com/gpu: "1"
 ```
 
----
-
-## (2) Enhanced ConfigMap: `basic-gpu-with-hybrid-cache`
+### (2) Helmfile: Orchestrating the Full Stack
 
 ```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: basic-gpu-with-hybrid-cache
-  namespace: llm-d
-data:
-  # (1) Configuration for decode pods with enhanced cache-aware routing
-  decodeDeployment: |
-    containers:
-      - name: routing-proxy
-        image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
-        # (1.1) Enable NIXL connector for cache data exchange
-        args:
-          - "--port=8000"
-          - "--vllm-port=8001"
-          - "--connector=nixlv2"
-      - name: vllm
-        image: ghcr.io/llm-d/llm-d:v0.2.0
-        # (1.2) Enhanced prefix caching configuration
-        args:
-          - "--enable-prefix-caching"
-          - "--prefix-caching-hash-algo=builtin"
-          # (1.3) Optimized GPU memory usage (reduced from 0.9 to 0.7 for stability)
-          - "--gpu-memory-utilization=0.7"
-          - "--max-model-len=4096"
-          - "--block-size=16"
-          - "--no-enable-chunked-prefill"
-          # (1.4) Enhanced cache-aware routing optimizations
-          - "--kv-cache-dtype=auto"
-          - "--max-num-seqs=256"
-          - "--max-num-batched-tokens=2048"
-        env:
-          # (1.5) NIXL side channel for inter-pod communication
-          - name: VLLM_NIXL_SIDE_CHANNEL_PORT
-            value: "5557"
-          - name: VLLM_NIXL_SIDE_CHANNEL_HOST
-            valueFrom:
-              fieldRef:
-                fieldPath: status.podIP
-          # (1.6) Enhanced cache index reporting for better routing
-          - name: VLLM_ENABLE_CACHE_INDEX_REPORTING
-            value: "true"
-          - name: VLLM_CACHE_INDEX_UPDATE_INTERVAL
-            value: "1"
+# helmfile.yaml - Deploy complete llm-d infrastructure
+repositories:
+  - name: llm-d-modelservice
+    url: https://llm-d-incubation.github.io/llm-d-modelservice/
 
-  # (2) Enhanced EPP Configuration with Session-Aware Scoring
-  eppDeployment: |
-    env:
-      # (2.1) Multi-dimensional scoring system for optimal routing
-      - name: ENABLE_KVCACHE_AWARE_SCORER
-        value: "true"
-      - name: ENABLE_LOAD_AWARE_SCORER
-        value: "true"
-      - name: ENABLE_PREFIX_AWARE_SCORER
-        value: "true"
-      # (2.2) CRITICAL: Session-aware scoring for 99.91% stickiness
-      - name: ENABLE_SESSION_AWARE_SCORER
-        value: "true"
-      
-      # (2.3) Optimized scoring weights for session stickiness
-      - name: KVCACHE_AWARE_SCORER_WEIGHT
-        value: "10"
-      - name: LOAD_AWARE_SCORER_WEIGHT
-        value: "1"
-      - name: PREFIX_AWARE_SCORER_WEIGHT
-        value: "5"
-      - name: SESSION_AWARE_SCORER_WEIGHT
-        value: "20"  # Highest weight for session stickiness
-      
-      # (2.4) Session scoring configuration
-      - name: SESSION_SCORING_ALGORITHM
-        value: "sticky_hash"
-      - name: SESSION_HEADER_NAMES
-        value: "session-id,x-session-id,authorization"
-      - name: SESSION_STICKY_DURATION
-        value: "3600"
-      
-      # (2.5) Enhanced Redis indexing with faster updates
-      - name: KVCACHE_INDEXER_REDIS_ADDR
-        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
-      - name: KVCACHE_INDEX_UPDATE_INTERVAL
-        value: "500ms"
-      
-      # (2.6) Prefill/Decode disaggregation with cache-aware routing
-      - name: PD_ENABLED
-        value: "true"
-      - name: PD_CACHE_AWARE_ROUTING
-        value: "true"
-      
-      # (2.7) Enhanced prefill scoring configuration
-      - name: PREFILL_ENABLE_KVCACHE_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_ENABLE_SESSION_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_KVCACHE_INDEXER_REDIS_ADDR
-        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
-      - name: PREFILL_SESSION_AWARE_SCORER_WEIGHT
-        value: "15"
+releases:
+  # (1) Infrastructure foundation
+  - name: llm-d-infra
+    namespace: llm-d
+    chart: https://llm-d-incubation.github.io/llm-d-infra/
+    version: v1.1.1
+    installed: true
+
+  # (2) Gateway API inference extension
+  - name: gateway-inference
+    namespace: llm-d
+    chart: oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool
+    version: v0.5.1
+    installed: true
+    needs:
+      - llm-d/llm-d-infra
+
+  # (3) ModelService with KV-cache-aware configuration
+  - name: cache-aware-model
+    namespace: llm-d
+    chart: llm-d-modelservice/llm-d-modelservice
+    version: v0.2.0
+    installed: true
+    needs:
+      - llm-d/llm-d-infra
+      - llm-d/gateway-inference
+    values:
+      - cache-aware-values.yaml  # The configuration above
 ```
 
 ---
@@ -278,11 +290,67 @@ spec:
 
 ---
 
-## 🔍 Component Deep Dive
+## 🔍 KV-Cache Indexer: Deep Architecture Dive
+
+The **KV-Cache Indexer** is the brain of llm-d's intelligent routing system. It maintains a global, near-real-time view of KV-Cache block locality across your entire vLLM fleet. Here's how it works:
+
+### Core Architecture Components
+
+| Component | Purpose | Implementation |
+|:----------|:--------|:---------------|
+| **`kvcache.Indexer`** | Main orchestrator handling scoring requests | Coordinates all internal modules |
+| **`kvevents.Pool`** | Ingests KV-cache events from vLLM pods | Sharded ZMQ worker pool for real-time event processing |
+| **`kvblock.Index`** | Core data store mapping block hashes to pods | In-memory two-level LRU cache for sub-millisecond lookups |
+| **`tokenization.PrefixStore`** | Caches tokenized prompt prefixes | LRU cache avoiding expensive re-tokenization |
+| **`kvblock.TokenProcessor`** | Converts tokens into KV-block keys | Chunking and hashing algorithm matching vLLM exactly |
+| **`kvblock.Scorer`** | Scores pods based on cache hit sequences | Longest consecutive prefix matching strategy |
+
+### The Read Path: Intelligent Pod Scoring
+
+When a router needs to select the best pod for a new prompt, the **Read Path** finds the pod with the longest sequence of relevant cached KV-blocks:
+
+1. **Token Retrieval**: Check the `PrefixStore` for the longest cached token sequence for the prompt prefix
+2. **Key Generation**: Convert tokens into deterministic KV-block keys that match vLLM's internal logic
+3. **Index Lookup**: Query the `kvblock.Index` to find which pods have the consecutive blocks
+4. **Scoring**: Rank each pod based on consecutive matching blocks from the start of the prompt
+5. **Response**: Return scored pod rankings to the router
+
+**Key Insight**: First-time prompts may return empty results while background tokenization occurs, but common prompts achieve sub-millisecond scoring.
+
+### The Write Path: Real-Time Cache Tracking
+
+The **Write Path** keeps the index synchronized with actual vLLM pod cache states:
+
+1. **Event Publication**: vLLM pods publish cache events (`BlockStored`, `BlockRemoved`) via ZMQ
+2. **Message Reception**: Events parsed by topic format: `kv@pod-id@model`
+3. **Sharded Processing**: Pod ID hashed (FNV-1a) to ensure ordered processing per pod
+4. **Event Decoding**: Worker decodes msgpack payloads containing event batches
+5. **Index Updates**: Apply cache changes to the in-memory `kvblock.Index`
+
+### Hash Compatibility & Block Generation
+
+Critical for accuracy, the indexer **perfectly matches vLLM's content-addressing logic**:
+
+- **Token Chunking**: Prompts tokenized and grouped into fixed chunks (default: 16)
+- **Chained Hashing**: SHA-256 hash of CBOR-encoded `[parentHash, tokenChunk, extraKeys]`
+- **Hash Seed Alignment**: Must match `PYTHONHASHSEED` environment variable across all vLLM pods
+- **64-bit Keys**: Uses lower 64 bits of SHA-256 for efficient storage and lookup
+
+### Performance Optimizations
+
+**Async Tokenization**: New prompts don't block scoring requests—tokenization happens in background worker pools with cached Hugging Face tokenizer instances.
+
+**Two-Level LRU Caching**: The index maps block keys to pod sets using nested LRU caches for both speed and memory efficiency.
+
+**Sharded Event Processing**: Pod events processed in parallel while maintaining per-pod ordering guarantees.
+
+---
+
+## 🔧 Component Configuration Details
 
 ### (1) EPP (External Processing Pod)
 
-The EPP acts as an **intelligent router** that queries Redis for cache state, directing requests to pods with cached data.
+The EPP integrates the KV-Cache Indexer with Istio's external processing capabilities:
 
 ```yaml
 - name: ENABLE_KVCACHE_AWARE_SCORER
@@ -291,52 +359,35 @@ The EPP acts as an **intelligent router** that queries Redis for cache state, di
   value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
 ```
 
----
+### (2) vLLM Cache Event Publishing
 
-### (2) Routing Proxy Sidecar
-
-Each decode pod runs a **routing-proxy sidecar** for KV-cache transfer via NIXL protocol.
+Each vLLM pod publishes cache events for the indexer to consume:
 
 ```yaml
 args:
-  - "--connector=nixlv2"
-  - "--port=8000"
-  - "--vllm-port=8001"
+  - "--enable-prefix-caching"
+  - "--prefix-caching-hash-algo=builtin"  # Must match indexer hash algorithm
+  - "--block-size=16"                     # Must match indexer chunk size
+env:
+  - name: PYTHONHASHSEED                  # Critical for hash consistency
+    value: "42"
+  - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+    value: "5557"
 ```
 
----
+### (3) EnvoyFilter for Gateway Integration
 
-### (3) EnvoyFilter
-
-The EnvoyFilter configures the **Istio gateway** to intercept requests and send them to the EPP for intelligent routing decisions.
+Enables the EPP to intercept and route requests based on cache intelligence:
 
 ```yaml
-# Key configuration: External processor setup
 name: envoy.filters.http.ext_proc
 typed_config:
   grpc_service:
     envoy_grpc:
       cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
   processing_mode:
-    request_header_mode: SEND  # Send request headers to EPP for routing decisions
-    response_header_mode: SKIP # Don't process responses, just forward them
-```
-
----
-
-### (4) vLLM Configuration
-
-The vLLM container enables **prefix caching** and exposes cache state through a side-channel:
-
-```yaml
-args:
-  - "--enable-prefix-caching"
-  - "--prefix-caching-hash-algo=builtin"
-  - "--block-size=16"
-  - "--no-enable-chunked-prefill"
-env:
-  - name: VLLM_NIXL_SIDE_CHANNEL_PORT
-    value: "5557"
+    request_header_mode: SEND  # Send headers to EPP for routing decisions
+    response_header_mode: SKIP # Don't modify responses
 ```
 
 ---
@@ -424,6 +475,7 @@ The bottom line: KV-cache-aware routing isn't just technically impressive—it's
 
 ## 📚 Learn More
 - [Project Code & Performance Test on GitHub](https://github.com/cnuland/hello-chris-llm-d)  
+- [llm-d KV Cache Manager Architecture](https://github.com/llm-d/llm-d-kv-cache-manager/blob/main/docs/architecture.md)  
 - [llm-d GitHub](https://github.com/llm-d/llm-d)  
 - [llm-d Operator Quickstart](https://llm-d.ai/docs/guide/Installation/prerequisites)  
 - [vLLM Documentation](https://docs.vllm.ai)
