@@ -4,54 +4,172 @@ metadata:
   name: llama-3-2-3b
   namespace: llm-d
 spec:
-  # Reference to the improved ConfigMap with P/D disaggregation enabled
-  baseConfigMapRef:
-    name: basic-gpu-with-nixl-and-pd-preset
-  
-  # Model configuration
   modelArtifacts:
     uri: "hf://meta-llama/Llama-3.2-3B"
     size: 50Gi
     authSecretName: "llm-d-hf-token"
-  
-  # Decode phase configuration
+
+  routing:
+    modelName: llama-3-2-3b
+    servicePort: 8000
+    proxy:
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
+      secure: false
+      connector: nixlv2
+    parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm-d-gateway
+      namespace: llm-d
+    epp:
+      create: true
+      # P/D disaggregation enabled configuration
+      env:
+      - name: ENABLE_KVCACHE_AWARE_SCORER
+        value: "true"
+      - name: ENABLE_LOAD_AWARE_SCORER
+        value: "true"
+      - name: ENABLE_PREFIX_AWARE_SCORER
+        value: "true"
+      - name: ENABLE_SESSION_AWARE_SCORER
+        value: "false"
+      - name: KVCACHE_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: KVCACHE_INDEXER_REDIS_ADDR
+        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:6379
+      - name: LOAD_AWARE_SCORER_WEIGHT
+        value: "1"
+      # P/D Disaggregation ENABLED
+      - name: PD_ENABLED
+        value: "true"
+      - name: PD_PROMPT_LEN_THRESHOLD
+        value: "10"
+      # Prefill scoring configuration
+      - name: PREFILL_ENABLE_KVCACHE_AWARE_SCORER
+        value: "true"
+      - name: PREFILL_ENABLE_LOAD_AWARE_SCORER
+        value: "true"
+      - name: PREFILL_ENABLE_PREFIX_AWARE_SCORER
+        value: "true"
+      - name: PREFILL_ENABLE_SESSION_AWARE_SCORER
+        value: "false"
+      - name: PREFILL_KVCACHE_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: PREFILL_KVCACHE_INDEXER_REDIS_ADDR
+        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:6379
+      - name: PREFILL_LOAD_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: PREFILL_PREFIX_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: PREFILL_SESSION_AWARE_SCORER_WEIGHT
+        value: "1"
+      - name: PREFIX_AWARE_SCORER_WEIGHT
+        value: "2"
+      - name: SESSION_AWARE_SCORER_WEIGHT
+        value: "1"
+    httpRoute:
+      create: true
+    inferenceModel:
+      create: true
+      criticality: Critical
+    inferencePool:
+      create: true
+      name: llama-3-2-3b-pool
+
   decode:
+    create: true
     replicas: 1
     acceleratorTypes:
       labelKey: nvidia.com/gpu.present
       labelValues:
       - "true"
     containers:
-    - name: vllm
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      modelCommand: vllmServe
+      args:
+        # Fixed prefix caching without conflicting KV transfer
+        - "--enable-prefix-caching"
+        - "--prefix-caching-hash-algo=sha256"
+        - "--gpu-memory-utilization=0.9"
+        - "--max-model-len=4096"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+        - "--port=8001"
       env:
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: PYTHONHASHSEED
+        value: "42"
+      - name: UCX_TLS
+        value: "^cuda_ipc"
+      - name: VLLM_LOGGING_LEVEL
+        value: INFO
       - name: HF_TOKEN
         valueFrom:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
+      ports:
+      - containerPort: 5557
+        protocol: TCP
+        name: nixl
+      - containerPort: 8001
+        protocol: TCP
+        name: vllm
       resources:
         limits:
           nvidia.com/gpu: "2"  # 3B model needs 2 GPUs for better performance
         requests:
           nvidia.com/gpu: "2"
-  
-  # Prefill phase configuration
+      mountModelVolume: true
+
   prefill:
+    create: true
     replicas: 1
     containers:
-    - name: vllm
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      modelCommand: vllmServe
+      args:
+        # Prefill without GPU memory settings
+        - "--max-model-len=4096"
+        - "--max-num-seqs=32"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+        - "--port=8000"
       env:
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: PYTHONHASHSEED
+        value: "42"
+      - name: UCX_TLS
+        value: "^cuda_ipc"
+      - name: VLLM_LOGGING_LEVEL
+        value: INFO
       - name: HF_TOKEN
         valueFrom:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
-  
-  # Routing configuration
-  routing:
-    modelName: llama-3-2-3b
-    gatewayRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: llm-d-gateway
-      namespace: llm-d
+      ports:
+      - containerPort: 8000
+        protocol: TCP
+        name: vllm
+      - containerPort: 5557
+        protocol: TCP
+        name: nixl
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      mountModelVolume: true

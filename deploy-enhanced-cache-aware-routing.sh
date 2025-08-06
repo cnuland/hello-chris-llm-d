@@ -25,22 +25,11 @@ echo "✅ Cluster access confirmed"
 
 # Backup current configuration
 echo "📦 Backing up current configuration..."
-kubectl get configmap basic-gpu-with-hybrid-cache -n llm-d -o yaml > /tmp/backup-hybrid-cache-configmap.yaml 2>/dev/null || echo "No existing configmap to backup"
-kubectl get modelservice llama-3-2-1b -n llm-d -o yaml > /tmp/backup-model-service.yaml 2>/dev/null || echo "No existing modelservice to backup"
+kubectl get modelservice llama-3-2-1b-enhanced -n llm-d -o yaml > /tmp/backup-enhanced-model-service.yaml 2>/dev/null || echo "No existing modelservice to backup"
 
-# Deploy enhanced cache-aware routing configuration
-echo "📦 Deploying enhanced cache-aware ConfigMap..."
-kubectl apply -f assets/cache-aware/enhanced-cache-aware-configmap.yaml
-
-# Update the existing ModelService to use the new ConfigMap
-echo "📦 Updating ModelService to use enhanced cache-aware routing..."
-kubectl patch modelservice llama-3-2-1b -n llm-d --type='merge' -p='{
-  "spec": {
-    "baseConfigMapRef": {
-      "name": "basic-gpu-with-enhanced-cache-routing"
-    }
-  }
-}'
+# Deploy enhanced cache-aware routing ModelService
+echo "📦 Deploying enhanced cache-aware ModelService with inline configuration..."
+kubectl apply -f assets/cache-aware/enhanced-model-service.yaml
 
 # Wait for operator to reconcile
 echo "⏳ Waiting for LLM-D operator to reconcile the changes..."

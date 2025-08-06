@@ -3,46 +3,152 @@ kind: ModelService
 metadata:
   name: llama-3-2-1b
   namespace: llm-d
+  labels:
+    app: cache-aware-routing
 spec:
-  baseConfigMapRef:
-    name: basic-gpu-with-hybrid-cache
+  modelArtifacts:
+    uri: "hf://meta-llama/Llama-3.2-1B"
+    size: 50Gi
+    authSecretName: "llm-d-hf-token"
+
+  routing:
+    modelName: llama-3-2-1b
+    servicePort: 8000
+    proxy:
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
+      secure: false
+      connector: nixlv2
+    parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: llm-d-gateway
+      namespace: llm-d
+    epp:
+      create: true
+    httpRoute:
+      create: true
+    inferenceModel:
+      create: true
+      criticality: Critical
+    inferencePool:
+      create: true
+      name: llama-3-2-1b-pool
+
   decode:
+    create: true
+    replicas: 3
     acceleratorTypes:
       labelKey: nvidia.com/gpu.present
       labelValues:
       - "true"
     containers:
-    - env:
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      modelCommand: vllmServe
+      args:
+        # Cache-aware routing optimizations
+        - "--enable-prefix-caching"
+        - "--prefix-caching-hash-algo=builtin"
+        - "--gpu-memory-utilization=0.7"
+        - "--max-model-len=4096"
+        - "--block-size=16"
+        - "--no-enable-chunked-prefill"
+        - "--kv-cache-dtype=auto"
+        - "--max-num-seqs=256"
+        - "--max-num-batched-tokens=2048"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+        - "--port=8001"
+      env:
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: VLLM_ENABLE_CACHE_INDEX_REPORTING
+        value: "true"
+      - name: VLLM_CACHE_INDEX_UPDATE_INTERVAL
+        value: "1"
+      - name: PYTHONHASHSEED
+        value: "42"
+      - name: UCX_TLS
+        value: "^cuda_ipc"
+      - name: VLLM_LOGGING_LEVEL
+        value: INFO
       - name: HF_TOKEN
         valueFrom:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
-      name: vllm
+      ports:
+      - containerPort: 5557
+        protocol: TCP
+        name: nixl
+      - containerPort: 8001
+        protocol: TCP
+        name: vllm
+      - containerPort: 8000
+        protocol: TCP
+        name: proxy
       resources:
         limits:
           nvidia.com/gpu: "1"
         requests:
           nvidia.com/gpu: "1"
-    replicas: 3
-  modelArtifacts:
-    authSecretName: llm-d-hf-token
-    size: 50Gi
-    uri: hf://meta-llama/Llama-3.2-1B
+      mountModelVolume: true
+
   prefill:
+    create: true
+    replicas: 2
     containers:
-    - env:
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      modelCommand: vllmServe
+      args:
+        - "--enable-prefix-caching"
+        - "--prefix-caching-hash-algo=builtin"
+        - "--gpu-memory-utilization=0.7"
+        - "--max-model-len=4096"
+        - "--block-size=16"
+        - "--no-enable-chunked-prefill"
+        - "--kv-cache-dtype=auto"
+        - "--max-num-seqs=128"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+        - "--port=8000"
+      env:
+      - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+        valueFrom:
+          fieldRef:
+            fieldPath: status.podIP
+      - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+        value: "5557"
+      - name: VLLM_ENABLE_CACHE_INDEX_REPORTING
+        value: "true"
+      - name: VLLM_CACHE_INDEX_UPDATE_INTERVAL
+        value: "2"
+      - name: PYTHONHASHSEED
+        value: "42"
+      - name: UCX_TLS
+        value: "^cuda_ipc"
+      - name: VLLM_LOGGING_LEVEL
+        value: INFO
       - name: HF_TOKEN
         valueFrom:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
-      name: vllm
-    replicas: 2
-  routing:
-    gatewayRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: llm-d-gateway
-      namespace: llm-d
-    modelName: llama-3-2-1b
+      ports:
+      - containerPort: 8000
+        protocol: TCP
+        name: vllm
+      - containerPort: 5557
+        protocol: TCP
+        name: nixl
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      mountModelVolume: true

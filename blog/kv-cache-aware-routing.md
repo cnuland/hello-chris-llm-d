@@ -476,30 +476,6 @@ One of the most immediate and noticeable benefits of KV-cache-aware routing is t
 - Cache Block Size: 16 tokens
 - GPU: NVIDIA A100 40GB
 
-**Results from Production Pipeline:**
-
-```bash
-# Cache Miss (First Request)
-$ time curl -X POST "https://llm-d.example.com/v1/completions" \
-  -H "Content-Type: application/json" \
-  -H "X-Session-ID: session-1" \
-  -d '{"prompt": "Analyze this document...", "max_tokens": 100}'
-
-# Response: "Based on the document analysis..."
-# TTFT: 2.85 seconds
-# Total Time: 4.2 seconds
-
-# Cache Hit (Subsequent Request with Same Prefix)
-$ time curl -X POST "https://llm-d.example.com/v1/completions" \
-  -H "Content-Type: application/json" \
-  -H "X-Session-ID: session-1" \
-  -d '{"prompt": "Analyze this document... What are the key findings?", "max_tokens": 100}'
-
-# Response: "The key findings include..."
-# TTFT: 0.34 seconds (88% improvement!)
-# Total Time: 1.8 seconds
-```
-
 ### Why Cache Hits Improve TTFT
 
 **1. Eliminated Prefill Computation**
@@ -519,28 +495,20 @@ $ time curl -X POST "https://llm-d.example.com/v1/completions" \
 
 ### Production TTFT Distribution
 
-**From our 87.4% cache hit rate deployment:**
+**From our 87.4% cache hit rate performance test:**
 
-```yaml
-# TTFT Performance Profile (4,776 requests)
-TTFT_Metrics:
-  cache_hits: 4,176 requests (87.4%)
-    p50_ttft: 298ms
-    p95_ttft: 420ms
-    p99_ttft: 580ms
-    average_improvement: 85.2%
-  
-  cache_misses: 600 requests (12.6%)
-    p50_ttft: 2,640ms
-    p95_ttft: 3,100ms
-    p99_ttft: 3,450ms
-    baseline_performance: true
+### TTFT Performance Profile (4,776 requests)
 
-  overall_improvement:
-    weighted_average_ttft: 587ms
-    vs_no_cache_ttft: 2,750ms
-    system_wide_improvement: 78.7%
-```
+| Request Type | Count | Percentage | LLM-Instance-1 | LLM-Instance-2 | LLM-Instance-3 | Notes |
+|:-------------|:------|:-----------|:---------------|:---------------|:---------------|:------|
+| **Cache Hits** | 4,176 | 87.4% | 298ms | 420ms | 580ms | 85.2% avg improvement |
+| **Cache Misses** | 600 | 12.6% | 2,640ms | 3,100ms | 3,450ms | Baseline performance |
+
+| Overall System Performance | Value |
+|:---------------------------|:------|
+| **Weighted Average TTFT** | 587ms |
+| **Without Cache TTFT** | 2,750ms |
+| **System-wide Improvement** | **78.7%** |
 
 ### Enterprise Impact of TTFT Improvements
 
@@ -582,7 +550,7 @@ The **87.4% cache hit rate achieving 85% TTFT improvement** represents a product
 
 ---
 
-## 🔴 OpenShift Platform Benefits: Enterprise Cost Optimization
+## 🔴 Enterprise Cost Optimization
 
 The TTFT improvements from KV-cache-aware routing deliver particularly strong value for **Red Hat OpenShift** deployments, where efficient resource utilization directly translates to reduced infrastructure costs and improved ROI.
 
@@ -602,106 +570,6 @@ The TTFT improvements from KV-cache-aware routing deliver particularly strong va
 - **Node Consolidation**: Higher efficiency allows workload consolidation on fewer nodes
 - **Power Efficiency**: Reduced compute time directly correlates to lower power consumption
 - **Storage Optimization**: Less GPU memory thrashing extends hardware lifespan
-
-### Real-World OpenShift Cost Analysis
-
-**Enterprise Scenario: Financial Services LLM Platform**
-- **Environment**: 20-node OpenShift cluster with NVIDIA A100 GPUs
-- **Workload**: Document analysis, compliance checking, customer service AI
-- **Pre-Cache Routing**: 2.8s average TTFT, 4,000 requests/hour capacity
-- **Post-Cache Routing**: 0.6s average TTFT, 12,000 requests/hour capacity
-
-| Cost Category | Without Cache Routing | With KV-Cache Routing | Annual Savings |
-|:--------------|:---------------------|:---------------------|:---------------|
-| **OpenShift Licensing** | $240,000/year (20 nodes) | $160,000/year (13 nodes) | **$80,000** |
-| **Cloud Infrastructure** | $180,000/year (GPU compute) | $72,000/year (reduced usage) | **$108,000** |
-| **Power & Cooling** | $48,000/year | $19,200/year | **$28,800** |
-| **Support & Maintenance** | $60,000/year | $42,000/year | **$18,000** |
-| **Total Annual Savings** | - | - | **$234,800** |
-
-### OpenShift Operator Benefits
-
-**🚀 Simplified Management**
-```yaml
-# OpenShift Operator automatically optimizes based on cache performance
-apiVersion: llm-d.ai/v1alpha1
-kind: ClusterPolicy
-metadata:
-  name: cache-aware-optimization
-spec:
-  autoScaling:
-    enabled: true
-    targetCacheHitRate: 85%
-    ttftThreshold: 500ms
-  resourceOptimization:
-    consolidateNodes: true
-    powerManagement: enabled
-```
-
-**📈 Built-in Monitoring Integration**
-- **OpenShift Console**: Native dashboards showing TTFT improvements
-- **Prometheus Integration**: Automatic alerting on cache efficiency degradation
-- **Cost Tracking**: Real-time cost attribution per namespace/tenant
-
-### Multi-Cloud Cost Optimization
-
-**Hybrid Cloud Flexibility**
-- **Edge Optimization**: Cache hits reduce data transfer costs to cloud regions
-- **Burst Capacity**: Efficient local processing reduces expensive cloud bursting
-- **Disaster Recovery**: Faster failover with pre-warmed caches in secondary regions
-
-**Container Platform Efficiency**
-```yaml
-# OpenShift resource optimization with cache-aware routing
-resources:
-  requests:
-    memory: "8Gi"      # Reduced from 16Gi due to cache efficiency
-    cpu: "2"           # Reduced from 4 cores
-    nvidia.com/gpu: "0.5"  # GPU sharing enabled by faster inference
-  limits:
-    memory: "12Gi"     # Reduced memory pressure
-    nvidia.com/gpu: "1"    # Better GPU utilization
-```
-
-### ROI Calculation for Enterprise OpenShift
-
-**Investment Analysis (3-Year Period):**
-
-```yaml
-Initial_Investment:
-  llm_d_implementation: $50,000    # Professional services + training
-  hardware_optimization: $25,000   # Reduced GPU requirements
-  total_capex: $75,000
-
-Annual_Operational_Savings:
-  reduced_licensing: $80,000       # Fewer OpenShift nodes needed
-  infrastructure_costs: $108,000   # Reduced compute time
-  power_cooling: $28,800          # Energy efficiency gains
-  operational_efficiency: $45,000  # Reduced support overhead
-  total_annual_savings: $261,800
-
-Three_Year_ROI:
-  total_savings: $785,400         # 3 × $261,800
-  net_benefit: $710,400           # $785,400 - $75,000
-  roi_percentage: 947%            # Exceptional return on investment
-```
-
-### Strategic Platform Benefits
-
-**🎥 Enhanced Developer Experience**
-- **Faster CI/CD**: Reduced inference time in automated testing pipelines
-- **Interactive Development**: Real-time AI assistance with sub-second response
-- **Resource Predictability**: Consistent performance across development environments
-
-**🔒 Enterprise Security & Compliance**
-- **Data Locality**: Cache hits reduce data movement, improving compliance
-- **Audit Efficiency**: Faster processing of compliance document analysis
-- **Zero-Trust Architecture**: Reduced external API calls through local cache hits
-
-**🔄 Business Continuity**
-- **Disaster Recovery**: Pre-warmed caches enable faster service restoration
-- **Peak Load Handling**: Cache efficiency prevents service degradation during spikes
-- **Geographic Distribution**: Consistent performance across global OpenShift clusters
 
 For organizations running LLM workloads on **Red Hat OpenShift**, KV-cache-aware routing represents a **force multiplier** that transforms both technical performance and business economics, delivering nearly **10x ROI** while maintaining enterprise-grade security and operational excellence.
 
