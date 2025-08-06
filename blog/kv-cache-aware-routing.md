@@ -72,129 +72,120 @@ To follow this guide, you should have:
 
 ## 🔧 Core Configurations
 
-### (1) Helm Values: Modern v0.2.0 Configuration
+### (1) ModelService: The Central Resource
 
 ```yaml
-# values.yaml - Official llm-d v0.2.0 configuration
-multinode: false
+apiVersion: llm-d.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: llama-3-2-1b
+  namespace: llm-d
+  labels:
+    app.kubernetes.io/name: cache-aware-routing
+spec:
+  modelArtifacts:
+    uri: "hf://meta-llama/Llama-3.2-1B"
+    size: 50Gi
+    authSecretName: "llm-d-hf-token"
 
-modelArtifacts:
-  uri: "hf://meta-llama/Llama-3.2-1B"
-  size: 50Gi
-  authSecretName: "llm-d-hf-token"
-
-routing:
-  modelName: meta-llama/Llama-3.2-1B
-  servicePort: 8000
-
-  # (1) KV-cache-aware routing proxy configuration
-  proxy:
-    image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
-    secure: false
-    connector: nixlv2  # NIXL connector for cache transfer
-
-  parentRefs:
+  routing:
+    modelName: meta-llama/Llama-3.2-1B
+    servicePort: 8000
+    proxy:
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
+      secure: false
+      connector: nixlv2
+    parentRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: llm-d-gateway
+    epp:
+      create: true
+    httpRoute:
+      create: true
 
-  # (2) Gateway and routing configuration
-  inferenceModel:
-    create: true
-  
-  inferencePool:
-    create: true
-    name: cache-aware-pool
-  
-  httpRoute:
-    create: true
-  
-  # (3) EPP for intelligent cache-aware routing
-  epp:
-    create: true
-
-# (4) Decode pods with KV-cache optimization
-decode:
-  create: true
-  replicas: 3
-  monitoring:
-    podmonitor:
-      enabled: true
-      portName: "metrics"
-      path: "/metrics"
-      interval: "30s"
-  containers:
-  - name: "vllm"
-    image: "ghcr.io/llm-d/llm-d:v0.2.0"
-    modelCommand: vllmServe
-    args:
-      # (4.1) KV-cache optimizations for maximum cache hit rates
-      - "--enable-prefix-caching"
-      - "--prefix-caching-hash-algo=builtin"
-      - "--block-size=16"              # Optimized for cache efficiency
-      - "--gpu-memory-utilization=0.7"  # Stable GPU memory usage
-      - "--max-model-len=4096"
-      - "--no-enable-chunked-prefill"   # Better cache consistency
-      - "--kv-cache-dtype=auto"
-      - "--max-num-seqs=256"
-      - "--enforce-eager"               # Stable execution mode
-      # (4.2) NIXL KV-transfer configuration for inter-pod cache sharing
-      - "--kv-transfer-config"
-      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
-    env:
-      # (4.3) NIXL side channel configuration
+  decode:
+    replicas: 3
+    containers:
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      args:
+        # KV-cache optimizations for maximum cache hit rates
+        - "vllm"
+        - "serve"
+        - "meta-llama/Llama-3.2-1B"
+        - "--host=0.0.0.0"
+        - "--port=8001"
+        - "--enable-prefix-caching"
+        - "--prefix-caching-hash-algo=builtin"
+        - "--block-size=16"
+        - "--gpu-memory-utilization=0.7"
+        - "--max-model-len=4096"
+        - "--no-enable-chunked-prefill"
+        - "--kv-cache-dtype=auto"
+        - "--max-num-seqs=256"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+      env:
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
         valueFrom:
           fieldRef:
             fieldPath: status.podIP
       - name: VLLM_NIXL_SIDE_CHANNEL_PORT
         value: "5557"
-      # (4.4) Hash seed for consistent cache indexing
       - name: PYTHONHASHSEED
         value: "42"
-      # (4.5) CUDA configuration for optimal performance
       - name: CUDA_VISIBLE_DEVICES
         value: "0"
       - name: UCX_TLS
         value: "cuda_ipc,cuda_copy,tcp"
       - name: VLLM_LOGGING_LEVEL
         value: DEBUG
-    ports:
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            key: HF_TOKEN
+            name: llm-d-hf-token
+      ports:
       - containerPort: 5557
         protocol: TCP
+        name: nixl
+      - containerPort: 8001
+        protocol: TCP
+        name: vllm
       - containerPort: 8200
         name: metrics
         protocol: TCP
-    resources:
-      limits:
-        nvidia.com/gpu: "1"
-      requests:
-        nvidia.com/gpu: "1"
-    mountModelVolume: true
-    volumeMounts:
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
+      volumeMounts:
+      - name: metrics-volume
+        mountPath: /.config
+      - name: torch-compile-cache
+        mountPath: /.cache
+    volumes:
     - name: metrics-volume
-      mountPath: /.config
+      emptyDir: {}
     - name: torch-compile-cache
-      mountPath: /.cache
-  volumes:
-  - name: metrics-volume
-    emptyDir: {}
-  - name: torch-compile-cache
-    emptyDir: {}
+      emptyDir: {}
 
-# (5) Prefill pods for workload disaggregation
-prefill:
-  create: true
-  replicas: 2
-  containers:
-  - name: "vllm"
-    image: "ghcr.io/llm-d/llm-d:v0.2.0"
-    modelCommand: vllmServe
-    args:
-      - "--enforce-eager"
-      - "--kv-transfer-config"
-      - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
-    env:
+  prefill:
+    replicas: 2
+    containers:
+    - name: "vllm"
+      image: "ghcr.io/llm-d/llm-d:v0.2.0"
+      args:
+        - "vllm"
+        - "serve"
+        - "meta-llama/Llama-3.2-1B"
+        - "--host=0.0.0.0"
+        - "--port=8000"
+        - "--enforce-eager"
+        - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
+      env:
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
         valueFrom:
           fieldRef:
@@ -203,51 +194,43 @@ prefill:
         value: "5557"
       - name: PYTHONHASHSEED
         value: "42"
-      - name: CUDA_VISIBLE_DEVICES
-        value: "0"
-    resources:
-      limits:
-        nvidia.com/gpu: "1"
-      requests:
-        nvidia.com/gpu: "1"
+      - name: HF_TOKEN
+        valueFrom:
+          secretKeyRef:
+            key: HF_TOKEN
+            name: llm-d-hf-token
+      resources:
+        limits:
+          nvidia.com/gpu: "1"
+        requests:
+          nvidia.com/gpu: "1"
 ```
 
-### (2) Helmfile: Orchestrating the Full Stack
+### (2) HTTPRoute: Gateway Integration
 
 ```yaml
-# helmfile.yaml - Deploy complete llm-d infrastructure
-repositories:
-  - name: llm-d-modelservice
-    url: https://llm-d-incubation.github.io/llm-d-modelservice/
-
-releases:
-  # (1) Infrastructure foundation
-  - name: llm-d-infra
-    namespace: llm-d
-    chart: https://llm-d-incubation.github.io/llm-d-infra/
-    version: v1.1.1
-    installed: true
-
-  # (2) Gateway API inference extension
-  - name: gateway-inference
-    namespace: llm-d
-    chart: oci://registry.k8s.io/gateway-api-inference-extension/charts/inferencepool
-    version: v0.5.1
-    installed: true
-    needs:
-      - llm-d/llm-d-infra
-
-  # (3) ModelService with KV-cache-aware configuration
-  - name: cache-aware-model
-    namespace: llm-d
-    chart: llm-d-modelservice/llm-d-modelservice
-    version: v0.2.0
-    installed: true
-    needs:
-      - llm-d/llm-d-infra
-      - llm-d/gateway-inference
-    values:
-      - cache-aware-values.yaml  # The configuration above
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: llama-3-2-1b-route
+  namespace: llm-d
+spec:
+  parentRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: llm-d-gateway
+  hostnames:
+  - "llm-d.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: "/v1/"
+    backendRefs:
+    - group: ""
+      kind: Service
+      name: llama-3-2-1b-service
+      port: 8000
 ```
 
 ---
