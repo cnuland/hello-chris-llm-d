@@ -1,43 +1,45 @@
+# Prometheus ServiceAccount
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: prometheus
   namespace: llm-d-monitoring
 ---
+# Prometheus ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: prometheus
+  name: prometheus-llm-d-monitoring
 rules:
 - apiGroups: [""]
   resources:
   - nodes
-  - nodes/proxy
   - services
   - endpoints
   - pods
   verbs: ["get", "list", "watch"]
-- apiGroups:
-  - extensions
+- apiGroups: [""]
   resources:
-  - ingresses
-  verbs: ["get", "list", "watch"]
+  - configmaps
+  verbs: ["get"]
 - nonResourceURLs: ["/metrics"]
   verbs: ["get"]
 ---
+# Prometheus ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: prometheus
+  name: prometheus-llm-d-monitoring
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: prometheus
+  name: prometheus-llm-d-monitoring
 subjects:
 - kind: ServiceAccount
   name: prometheus
   namespace: llm-d-monitoring
 ---
+# Prometheus Configuration
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -98,7 +100,7 @@ data:
         regex: (.+)
       - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
-        regex: ([^:]+)(?::\d+)?;(\d+)
+        regex: ([^:]+)(?:\\d+)?;(\\d+)
         replacement: $1:$2
         target_label: __address__
       - action: labelmap
@@ -202,7 +204,7 @@ data:
         regex: (.+)
       - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
         action: replace
-        regex: ([^:]+)(?::\d+)?;(\d+)
+        regex: ([^:]+)(?:\\d+)?;(\\d+)
         replacement: $1:$2
         target_label: __address__
       - action: labelmap
@@ -213,7 +215,7 @@ data:
       - source_labels: [__meta_kubernetes_pod_name]
         action: replace
         target_label: kubernetes_pod_name
-  
+
   inference_rules.yml: |
     groups:
     - name: inference.rules
@@ -263,6 +265,7 @@ data:
           summary: llm-d scheduler is down
           description: "llm-d scheduler instance {{ $labels.instance }} is not responding"
 ---
+# Prometheus Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -285,22 +288,22 @@ spec:
       - name: prometheus
         image: prom/prometheus:v2.45.0
         args:
-          - '--config.file=/etc/prometheus/prometheus.yml'
-          - '--storage.tsdb.path=/prometheus/'
-          - '--web.console.libraries=/etc/prometheus/console_libraries'
-          - '--web.console.templates=/etc/prometheus/consoles'
-          - '--storage.tsdb.retention.time=7d'
-          - '--web.enable-lifecycle'
-          - '--web.enable-admin-api'
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus/
+        - --web.console.libraries=/etc/prometheus/console_libraries
+        - --web.console.templates=/etc/prometheus/consoles
+        - --storage.tsdb.retention.time=7d
+        - --web.enable-lifecycle
+        - --web.enable-admin-api
         ports:
         - containerPort: 9090
         resources:
           requests:
-            memory: "2Gi"
             cpu: "1"
+            memory: "2Gi"
           limits:
-            memory: "4Gi"
             cpu: "2"
+            memory: "4Gi"
         volumeMounts:
         - name: prometheus-config-volume
           mountPath: /etc/prometheus/
@@ -324,22 +327,18 @@ spec:
           - key: inference_rules.yml
             path: inference_rules.yml
 ---
+# Prometheus Service
 apiVersion: v1
 kind: Service
 metadata:
   name: prometheus
   namespace: llm-d-monitoring
-  labels:
-    app: prometheus
-  annotations:
-    prometheus.io/scrape: 'true'
-    prometheus.io/port: '9090'
 spec:
-  selector:
-    app: prometheus
   type: ClusterIP
   ports:
   - port: 9090
     targetPort: 9090
     protocol: TCP
-    name: web 
+    name: web
+  selector:
+    app: prometheus
