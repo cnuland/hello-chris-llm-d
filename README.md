@@ -5,16 +5,27 @@ A concise, production-oriented demo of distributed LLM inference featuring cache
 
 ## Getting Started
 
-Prerequisites
-- Kubernetes 1.27+ (OpenShift OK). GPU nodes recommended for real inference
-- kubectl configured for your cluster
-- Optional but recommended: Istio/Envoy Gateway for external access and EPP external processing
+Prerequisites and setup
+- A Kubernetes cluster (v1.27+) or OpenShift. GPU nodes recommended for real inference
+- kubectl (or oc) configured for your cluster/context
+- A gateway implementation (Istio or kGateway) for external access and Envoy External Processing (EPP)
+- Recommended: install the base infrastructure with llm-d-infra before deploying this repo’s demo components
 
-Quick deploy (dry-run by default)
-- Preview what will be applied:
-  scripts/deploy.sh --monitoring
-- Apply core plus monitoring:
-  scripts/deploy.sh --apply --monitoring
+Install the base infrastructure first (recommended)
+- This repository vendors llm-d-infra under llm-d-infra/. Use its quickstart to prepare namespaces, gateway, and optional monitoring.
+- Example:
+  - cd llm-d-infra/quickstart
+  - ./install-deps.sh   # installs helm/helmfile, kustomize, yq, etc.
+  - export HF_TOKEN="your-hf-token"   # if you plan to pull gated models
+  - ./llmd-infra-installer.sh --gateway istio   # or --gateway kgateway
+  - For details and additional options, see llm-d-infra/quickstart/README.md
+
+Deploy the demo components (dry-run by default)
+- After the infrastructure is installed, run from the repo root:
+  - Preview what will be applied:
+    scripts/deploy.sh --monitoring
+  - Apply core plus monitoring:
+    scripts/deploy.sh --apply --monitoring
 
 What gets installed
 - Core llm-d components via Kustomize at assets/llm-d
