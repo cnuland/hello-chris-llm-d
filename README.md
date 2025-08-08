@@ -1,567 +1,111 @@
 # LLM-D: Kubernetes-Native Distributed LLM Inference Platform
 
-A production-ready demonstration of intelligent distributed LLM inference with **cache-aware routing**, **prefill/decode disaggregation**, and advanced monitoring. Achieves **87.4% cache hit rates** and **99.91% session stickiness** through intelligent request routing.
+A concise, production-oriented demo of distributed LLM inference featuring cache-aware routing, prefill/decode disaggregation, and first-class observability.
+
+
+## Getting Started
+
+Prerequisites
+- Kubernetes 1.27+ (OpenShift OK). GPU nodes recommended for real inference
+- kubectl configured for your cluster
+- Optional but recommended: Istio/Envoy Gateway for external access and EPP external processing
+
+Quick deploy (dry-run by default)
+- Preview what will be applied:
+  scripts/deploy.sh --monitoring
+- Apply core plus monitoring:
+  scripts/deploy.sh --apply --monitoring
+
+What gets installed
+- Core llm-d components via Kustomize at assets/llm-d
+- Envoy external processor filter at assets/epp-external-processor.yaml
+- Monitoring in llm-d-monitoring namespace:
+  - Prometheus (v2.45.0) with scrape jobs for vLLM, EPP, gateway and k8s
+  - Grafana with provisioned Prometheus datasource and the LLM Performance dashboard
+
+Validate
+- Core status (adjust namespace/model names as needed):
+  kubectl get pods -n llm-d
+- Grafana route URL:
+  kubectl -n llm-d-monitoring get route grafana-secure -o jsonpath='{.spec.host}'
+  # Login: admin / admin (demo)
+- Prometheus service:
+  kubectl -n llm-d-monitoring get svc prometheus
+
+Uninstall (manual example)
+- Use kubectl delete with the same manifests you applied, or roll back using your Git history. If desired, I can add a cleanup script on request.
+
+
+## Architecture (overview)
+
+High-level flow
+1) Client → Gateway (TLS) → Envoy external processing (EPP)
+2) EPP evaluates cache affinity, load, and policy → issues routing decision
+3) HTTPRoute forwards to the backend service based on EPP decision
+4) Cache-aware service + session affinity target decode pods
+5) Decode pods (routing proxy + vLLM) execute inference with prefix cache
+6) Prometheus scrapes metrics; Grafana visualizes TTFT, cache, throughput, etc.
+
+Key components
+- EPP (External Processor): request inspection, scoring (cache-aware + load), decision
+- Gateway/Envoy: external processing integration point (EnvoyFilter)
+- Cache-aware service: Kubernetes Service with session affinity for locality
+- vLLM pods: routing proxy on 8000, vLLM metrics on 8001, prefix cache enabled
+- Observability: Prometheus scrape jobs and pre-provisioned Grafana dashboard
+
+Why it works
+- Session affinity concentrates repeat traffic to warm pods
+- Prefix caching improves latency and GPU efficiency
+- External processing keeps routing policy out of the data-plane configs and under control
+
+For a deeper technical outline (design rationale, metrics, demo flow), see the blog posts in blog/ (do not modify them here).
+
+
+## Monitoring
+
+What’s deployed (llm-d-monitoring)
+- Prometheus: v2.45.0, 7d retention, jobs include:
+  - kubernetes-pods (llm-d), vllm-instances (port mapping 8000→8000), llm-d-scheduler, gateway-api inference extension (EPP), Envoy/gateway
+- Grafana: latest, anonymous viewer enabled, admin user seeded for demo
+- Dashboards: LLM Performance Dashboard provisioned from monitoring/grafana-dashboard-llm-performance.json
+
+Key panels (examples)
+- TTFT: histogram_quantile over vllm:time_to_first_token_seconds_bucket
+- Inter-token latency: vllm:time_per_output_token_seconds_bucket
+- Cache hit rates: sum(vllm:gpu_prefix_cache_hits_total) / sum(vllm:gpu_prefix_cache_queries_total)
+- Request queue: vllm:num_requests_running vs vllm:num_requests_waiting
+- Throughput: rate(vllm:request_success_total[5m])
+
+Files of record
+- Prometheus
+  - monitoring/prometheus.yaml (SA/RBAC/Deployment/Service)
+  - monitoring/prometheus-config.yaml (scrape configs + alert rules)
+- Grafana
+  - monitoring/grafana.yaml (SA/Deployment)
+  - monitoring/grafana-config.yaml (grafana.ini)
+  - monitoring/grafana-datasources.yaml (Prometheus datasource)
+  - monitoring/grafana-dashboards-config.yaml (provisioning)
+  - monitoring/grafana-dashboard-llm-performance.json (dashboard)
+  - monitoring/grafana-service.yaml (Service + OpenShift Route)
+
+
+## Repository Layout (selected)
+- assets/llm-d: primary Kustomize for core deployment
+- assets/monitoring: ServiceMonitor/PodMonitor examples for cluster monitoring operators
+- monitoring/: exact manifests synced with live llm-d-monitoring namespace
+- scripts/deploy.sh: minimal deployer, dry-run by default, supports --monitoring
+- guidellm/: Tekton/benchmarking assets (optional)
+
+
+## Notes and expectations
+- Metrics and routes: some names/hosts are environment-specific; update to your cluster
+- Secrets/tokens: this repo does not include real secrets. Configure any required tokens (e.g., HF) as Kubernetes Secrets in your cluster
+- GPU requirement: for real model inference, deploy onto GPU nodes; otherwise, deploy the stack and test the control-plane paths only
 
-## 🚀 Quick Start
 
-### Prerequisites
-- Kubernetes cluster v1.27+ with GPU support
-- kubectl configured
-- OpenShift/Istio (for advanced routing)
-- LLM-D operator deployed
-
-### Deploy & Test
-
-```bash
-# Deploy complete KV-cache-aware system
-./scripts/deploy-llm-d-full.sh
-
-# Verify deployment
-kubectl get pods -n llm-d
-
-# Test cache-aware routing with session stickiness
-curl -k -X POST "https://llm-d-inference-gateway-llm-d.apps.your-cluster.com/v1/completions" \
-  -H "Content-Type: application/json" \
-  -H "X-Session-ID: test-session" \
-  -d '{
-    "model": "meta-llama/Llama-3.2-1B",
-    "prompt": "Hello, how are you?",
-    "max_tokens": 50
-  }'
-
-# Run comprehensive cache hit rate tests
-kubectl create -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml -n llm-d
-```
-
-**Verified Results**: 87.4% cache hit rates, 99.91% session stickiness, sub-150ms response times
-
-## 🎯 Key Features
-
-- **🚀 Cache-Aware Routing**: 87.4% hit rates, 99.91% session stickiness
-- **⚡ Prefill/Decode Disaggregation**: 2-5x throughput improvement  
-- **📊 Advanced Monitoring**: 384+ LLM metrics with Grafana dashboards
-- **🔄 Multi-Tenant QoS**: Priority-based routing with SLA compliance
-
-## 📚 Documentation
-
-### Essential Guides
-- **[Deployment Guide](deployment-guide.md)** - Step-by-step deployment instructions
-- **[Testing Guide](testing-guide.md)** - Comprehensive testing and validation procedures
-- **[Troubleshooting Guide](metrics-debug-guide.md)** - Common issues and debugging procedures
-- **[Demo Guide](llm-d-comprehensive-demo-guide.md)** - Complete demonstration walkthrough
-
-### Architecture & Technical Details
-- **[Architecture Guide](assets/cache-aware/docs/architecture.md)** - Detailed system architecture
-- **[Metrics & Monitoring](assets/cache-aware/docs/metrics.md)** - Monitoring setup and observability
-- **[Cache-Aware Routing Implementation](cache-aware-routing.md)** - Complete implementation guide
-- **[Development Journey](assets/cache-aware/docs/development-journey.md)** - Lessons learned and technical insights
-
-## 📋 Prerequisites
-
-- **Kubernetes Cluster**: v1.27+ with GPU support (recommended)
-- **kubectl**: Configured to access your cluster
-- **Docker**: For building container images
-- **Node.js**: v16+ (for frontend development)
-- **Python**: 3.11+ (for backend development)
-
-### GPU Requirements (Optional)
-- NVIDIA GPU nodes with GPU operator installed
-- At least 16GB GPU memory per node for optimal performance
-- Nodes labeled with `accelerator=nvidia-gpu`
-
-## 🏗️ KV-Cache-Aware System Architecture
-
-**Current Production Architecture (Fixed & Validated):**
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│     Client      │────│  Istio Gateway  │────│ EPP (External   │
-│   (API Calls)   │    │ (HTTPS/TLS)     │    │  Processor)     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                ↓                        ↓
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │  HTTPRoute      │    │ KV-Cache-Aware  │
-                       │ (to backend)    │    │ Routing Logic   │
-                       └─────────────────┘    └─────────────────┘
-                                ↓                        ↓
-                       ┌─────────────────┐    ┌─────────────────┐
-                       │ Cache-Aware     │────│ Session Affinity│
-                       │ Service         │    │ + Scoring       │
-                       └─────────────────┘    └─────────────────┘
-                                ↓
-                    ┌─────────────────────────────────────────────────┐
-                    │                Decode Pods                     │
-                    │  ┌─────────────┐ ┌─────────────┐ ┌───────────┐  │
-                    │  │ routing-    │ │ routing-    │ │ routing-  │  │
-                    │  │ proxy       │ │ proxy       │ │ proxy     │  │
-                    │  │ + vLLM      │ │ + vLLM      │ │ + vLLM    │  │
-                    │  │ (w/cache)   │ │ (w/cache)   │ │ (w/cache) │  │
-                    │  └─────────────┘ └─────────────┘ └───────────┘  │
-                    └─────────────────────────────────────────────────┘
-                                             │
-                                   ┌─────────────────┐
-                                   │   Monitoring    │
-                                   │ (Prometheus,    │
-                                   │  Grafana)       │
-                                   └─────────────────┘
-```
-
-**Request Flow (Corrected):**
-1. **Client** → HTTPS request to gateway
-2. **Istio Gateway** → EnvoyFilter routes to EPP for processing
-3. **EPP (External Processor)** → Analyzes request, makes routing decision
-4. **HTTPRoute** → Routes to cache-aware backend service 
-5. **Backend Service** → Distributes to decode pods based on EPP decision
-6. **Decode Pods** → Process with 87.4% cache hit rates and 99.91% session stickiness
-
-**Key Architecture Fix:**
-- ✅ **EPP as External Processor** (not direct route target)
-- ✅ **HTTPRoute to Backend Service** (not EPP service)
-- ✅ **EnvoyFilter for External Processing** (critical for KV-cache routing)
-- ✅ **Session Affinity + Cache-Aware Scoring** (enables 87%+ hit rates)
-
-## ✨ Recent Updates & Improvements
-
-This demonstration includes several production-ready improvements and fixes:
-
-### 🔧 Prefix Caching & Configuration Fixes (RESOLVED)
-- **FIXED: KV Transfer Config Conflict** - Removed conflicting `--kv-transfer-config` that was interfering with local prefix caching
-- **FIXED: Redis Port Configuration** - Updated EPP Redis connections from incorrect port 8100 to correct port 6379
-- **FIXED: vLLM Development Version Issues** - Identified and documented workarounds for v0.8.5.dev708+g6a0c5cd7f prefix caching bugs
-- **Cache Metrics Validation** - Cache queries now properly increment (0→18→27), confirming functional cache infrastructure
-- **Configuration Validation Script** - Created comprehensive test script to validate all prefix caching fixes
-
-### 🔧 Metrics Collection & Monitoring (RESOLVED)
-- **ServiceMonitor & PodMonitor**: Fixed comprehensive vLLM metrics collection with proper port configurations
-- **Service Port Mapping**: Resolved decode pod port conflicts between routing proxy (8000) and vLLM (8001)
-- **Prometheus Integration**: Successfully configured metrics collection in `llm-d-monitoring` namespace
-- **Cache Metrics**: Working prefix cache hit rate monitoring with `vllm:gpu_prefix_cache_*` metrics
-- **P/D Disaggregation**: Full prefill/decode separation with proper EPP routing through Gateway API
-
-### 🌐 Network and Routing Fixes
-- **HTTPRoute Resolution**: Fixed 503 errors by updating HTTPRoute to use ClusterIP service instead of headless service
-- **TLS Termination**: Configured proper HTTPS access through OpenShift Route with edge termination
-- **Service Mesh Integration**: Improved Istio Gateway configuration for reliable traffic routing
-- **ModelService CRD**: Declarative infrastructure management with proper service labeling
-
-### 📈 Enhanced Monitoring & Observability
-- **Metrics Exposure**: Working ServiceMonitor and PodMonitor for comprehensive vLLM metrics collection
-- **Prometheus Integration**: Configured namespace labeling for OpenShift cluster monitoring integration
-- **Rich Telemetry**: Exposed 384+ vLLM-specific metrics including request rates, token processing, and cache analytics
-- **Real-time Debugging**: Created comprehensive debugging tools (`scripts/debug-metrics.sh`, `metrics-debug-guide.md`)
-
-### 🛠️ Benchmarking & Load Testing
-- **GuideLLM Integration**: Complete Tekton pipeline setup for automated LLM benchmarking
-- **Multiple Deployment Options**: Both Tekton Pipeline and standalone Kubernetes Job implementations
-- **Validated Configurations**: Production-tested parameters that avoid common pitfalls
-- **Automated Testing**: Load generation scripts with comprehensive validation
-
-### 📦 Production-Ready Assets
-- **Kustomize Organization**: Well-structured asset directories for infrastructure and monitoring
-- **Clean Configurations**: Cluster-agnostic manifests ready for deployment anywhere
-- **Comprehensive Documentation**: Detailed guides, troubleshooting, and test scripts
-
-All improvements are based on real production challenges and have been thoroughly tested in OpenShift environments.
-
-## 🎯 Demo Scenarios
-
-### Cache-Aware Routing Performance
-**Verified ✅** - 3x TTFT improvement through intelligent cache utilization
-- 4 vLLM instances with prefix caching enabled
-- 58% cache hit rate (80 hits out of 138 queries)
-- 30% latency improvement (235ms → 163ms average)
-
-### Prefill/Decode Disaggregation  
-**Production Ready** - 2-5x throughput improvement through workload separation
-- Separate compute-optimized (prefill) and memory-optimized (decode) pools
-- 80%+ GPU utilization efficiency
-- Specialized instance optimization
-
-### Multi-Tenant QoS Management
-**Available** - Service level differentiation
-- Three service tiers (Interactive, Standard, Batch)
-- Priority-based request routing
-- Guaranteed SLA adherence
-
-## 🖥️ User Interface Components
-
-### 🎮 Interactive Frontend
-- **Inference Playground**: Interactive LLM testing interface with real-time streaming responses
-- **Real-time Metrics Dashboard**: System overview with key performance indicators
-- **System Status Monitor**: Live pod and service monitoring with health indicators
-- **Performance Analytics**: Request-level metrics and latency analysis with comparison tools
-
-### 📊 Scheduler Visualization
-- **Routing Decisions**: Real-time visualization of intelligent routing decisions
-- **Load Balancing**: Instance scoring and selection algorithms display
-- **Cache Topology**: Visual representation of shared cache relationships
-- **Demo Scenarios Control**: One-click activation with progress tracking and results analysis
-
-## 📊 Monitoring and Observability
-
-### 🎯 Monitoring Setup
-- **Namespace**: All monitoring components (Grafana and Prometheus) are deployed in the `llm-d-monitoring` namespace
-- **Access URL**: https://grafana-llm-d-monitoring.apps.rhoai-cluster.qhxt.p1.openshiftapps.com
-- **Login Credentials**: `admin` / `admin` (demo environment)
-- **Dashboard**: LLM Performance Dashboard with comprehensive vLLM metrics
-
-### Prometheus Metrics
-- **System Metrics**: CPU, memory, GPU utilization
-- **Application Metrics**: Request latency, throughput, error rates
-- **vLLM Metrics**: 384+ specialized metrics including:
-  - Time to First Token (TTFT) latency
-  - Inter-token latency and generation speed
-  - GPU cache utilization and hit rates
-  - Request queue management
-  - Token processing rates
-- **Custom Metrics**: Cache hit ratios, routing decisions, queue lengths
-- **Alerting**: SLA violations and system health alerts
-
-### Grafana Dashboards
-- **LLM Performance Dashboard**: Comprehensive vLLM monitoring with:
-  - Time to First Token (TTFT) percentiles (P50, P95, P99)
-  - GPU cache utilization with color-coded thresholds
-  - KV cache hit rate efficiency metrics
-  - Request queue status and throughput
-  - Token processing rates and end-to-end latency
-- **Cache Analytics**: Prefix cache performance and optimization
-- **Gateway Health**: Envoy proxy metrics and routing decisions
-- **Model Performance**: Per-model latency and throughput analysis
-
-### Distributed Tracing
-- **Request Flow**: End-to-end request tracing through all components
-- **Performance Bottlenecks**: Detailed timing analysis
-- **Error Tracking**: Failure modes and recovery patterns
-- **Dependency Mapping**: Service interaction visualization
-
-## 🛠️ Development Setup
-
-### Backend Development
-```bash
-cd app/backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-python -m app.main
-```
-
-### Frontend Development
-```bash
-cd app/frontend
-npm install
-npm start
-# Development server runs on http://localhost:3000
-```
-
-### Local Testing
-```bash
-# Run backend tests
-cd app/backend && python -m pytest
-
-# Run frontend tests
-cd app/frontend && npm test
-
-# Integration tests
-./scripts/test-integration.sh
-```
-
-## 📦 Deployment Assets
-
-### Assets Directory Structure
-
-The `/assets` directory contains production-ready Kubernetes manifests organized with Kustomize for easy deployment:
-
-```
-assets/
-├── base/                           # Core infrastructure components
-│   ├── deployment.yaml             # vLLM deployment configuration
-│   ├── service.yaml                # ClusterIP service for load balancing
-│   ├── httproute.yaml              # Gateway routing configuration
-│   ├── gateway.yaml                # Istio Gateway resource
-│   └── route.yaml                  # OpenShift Route with TLS
-├── monitoring/                     # Observability stack
-│   ├── servicemonitor.yaml         # Prometheus ServiceMonitor
-│   ├── podmonitor.yaml             # Prometheus PodMonitor
-│   └── metrics-service.yaml        # Metrics exposure service
-├── load-testing/                   # Load testing resources
-│   └── load-test-job.yaml          # Kubernetes Job for load testing
-└── kustomization.yaml              # Main Kustomize configuration
-```
-
-### GuideLLM Benchmarking Suite
-
-The `guidellm/` directory provides comprehensive LLM benchmarking capabilities:
-
-```
-guidellm/
-├── README.md                       # Complete deployment guide
-├── pipeline/                       # Tekton Pipeline resources
-│   ├── tekton-task.yaml           # GuideLLM benchmark task
-│   ├── tekton-pipeline.yaml       # Complete pipeline definition
-│   └── pipelinerun-template.yaml  # Working pipeline run template
-├── utils/                         # Supporting utilities  
-│   ├── pvc.yaml                   # Persistent storage for results
-│   ├── guidellm-job.yaml          # Standalone Kubernetes job
-│   └── serviceaccount.yaml        # RBAC configuration
-├── configs/                       # Configuration management
-│   ├── config.yaml                # GuideLLM settings
-│   └── env-config.yaml            # Environment variables
-├── test-deployment.sh             # Validation and testing script
-└── kustomization.yaml             # Kustomize deployment config
-```
-
-### Quick Deployment Commands
-
-**Deploy Core Infrastructure:**
-```bash
-# Deploy all base components
-kubectl apply -k assets/
-
-# Deploy only monitoring
-kubectl apply -k assets/monitoring/
-```
-
-**Deploy GuideLLM Benchmarking:**
-```bash
-# Deploy all GuideLLM resources
-kubectl apply -k guidellm/
-
-# Test the deployment
-./guidellm/test-deployment.sh
-
-# Run a benchmark
-kubectl create -f guidellm/pipeline/pipelinerun-template.yaml
-```
-
-**Validated Configuration:**
-Based on production testing, this configuration works reliably:
-- **Target**: `http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000`
-- **Model**: `meta-llama/Llama-3.2-1B`
-- **Processor**: `""` (empty for synthetic data)
-- **Data**: `synthetic:count=10`
-- **Rate Type**: `synchronous`
-
-## 🛠️ Configuration
-
-### Environment Variables
-```bash
-# Backend Configuration
-PROMETHEUS_URL=http://prometheus.llm-d-demo.svc.cluster.local:9090
-LLM_D_SCHEDULER_URL=http://llm-d-scheduler.llm-d-demo.svc.cluster.local:8080
-METRICS_COLLECTION_INTERVAL=5
-LOG_LEVEL=INFO
-
-# Frontend Configuration
-REACT_APP_BACKEND_URL=http://localhost:8000
-REACT_APP_WS_URL=ws://localhost:8000/ws/metrics
-```
-
-### Scheduler Configuration
-The llm-d scheduler can be configured through the ConfigMap in `k8s/llm-d-scheduler/deployment.yaml`:
-
-```yaml
-scheduler:
-  algorithm: "prefix_cache_aware"
-  cache_aware_routing: true
-  cache_hit_weight: 0.7
-  load_weight: 0.3
-
-filters:
-  - name: "cache_affinity_filter"
-    enabled: true
-    config:
-      cache_hit_threshold: 0.6
-
-scorers:
-  - name: "cache_score"
-    weight: 0.4
-  - name: "load_score"
-    weight: 0.3
-```
-
-## 📈 Performance Benchmarks
-
-### Baseline Comparison
-| Metric | Standard K8s | llm-d | Improvement |
-|--------|-------------|-------|-------------|
-| P95 TTFT | 8.2s | 2.7s | **3.0x** |
-| Throughput | 12 QPS | 26 QPS | **2.2x** |
-| GPU Utilization | 45% | 82% | **1.8x** |
-| Cache Hit Rate | N/A | 74% | **New** |
-
-### Scaling Performance
-| Workload | Instances | QPS | P95 Latency | GPU Util |
-|----------|-----------|-----|-------------|----------|
-| Light | 2 | 5 | 1.2s | 35% |
-| Medium | 4 | 15 | 2.1s | 68% |
-| Heavy | 8 | 35 | 3.8s | 85% |
-| Peak | 12 | 50 | 4.2s | 87% |
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Gateway Not Ready**
-```bash
-kubectl describe gateway llm-d-inference-gateway -n llm-d-demo
-# Check for Envoy Gateway installation
-kubectl get pods -n envoy-gateway-system
-```
-
-**Scheduler Connection Errors**
-```bash
-kubectl logs deployment/llm-d-scheduler -n llm-d-demo
-# Check service endpoints
-kubectl get endpoints -n llm-d-demo
-```
-
-**GPU Resource Issues**
-```bash
-# Check GPU node availability
-kubectl get nodes -l accelerator=nvidia-gpu
-# Verify GPU operator
-kubectl get pods -n gpu-operator-resources
-```
-
-**Frontend Connection Issues**
-```bash
-# Check backend service
-kubectl port-forward svc/llm-d-demo-backend 8000:8000 -n llm-d-demo
-# Test WebSocket connection
-curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" http://localhost:8000/ws/metrics
-```
-
-### Debug Commands
-```bash
-# Overall system status
-./scripts/deploy-demo.sh status
-
-# View scheduler logs
-./scripts/deploy-demo.sh logs
-
-# Monitor resource usage
-kubectl top pods -n llm-d-demo
-
-# Check gateway status
-kubectl get gateway,httproute -n llm-d-demo
-
-# Validate vLLM health
-kubectl exec -it deployment/vllm-standard -n llm-d-demo -- curl localhost:8000/health
-```
-
-## 🎯 Demo and Testing
-
-### Cache-Aware Routing Demo (Verified ✅)
-
-The cache-aware routing feature is **verified working** with measurable performance improvements:
-
-**Quick Start:**
-```bash
-# Verify system status
-./assets/testing/verify-demo-setup.sh
-
-# Test cache-aware routing
-python3 assets/testing/test-cache-aware-routing.py
-```
-
-**Results:**
-- **58% cache hit rate** (80 hits out of 138 queries) ✅ FIXED!
-- **26.6% performance improvement** from cache warming
-- **30% latency improvement** from intelligent routing (235ms → 163ms average)
-- Intelligent request distribution across 3 decode pods
-- Real-time cache metrics available via vLLM endpoints
-
-**Complete Demo Guide:** [assets/demo-cache-aware-routing.md](assets/demo-cache-aware-routing.md)
-
-### Additional Testing Resources
-
-- **Load Testing**: `assets/load-testing/` - GuideLLM benchmarking suite
-- **Frontend UI**: `app/frontend/` - Interactive React-based interface  
-- **Monitoring**: Grafana dashboard at configured route (admin/admin)
-- **Test Scripts**: `assets/testing/` - Automated verification and testing
-
-### Key Demo Features
-
-- ✅ **Cache-aware routing** - Verified 30% performance improvement
-- ✅ **Distributed inference** - Prefill/decode pod separation
-- ✅ **Load balancing** - Intelligent request distribution
-- ✅ **Real-time monitoring** - Comprehensive Grafana dashboards
-- ✅ **Performance testing** - GuideLLM integration
-
-## 🤝 Contributing
-
-We welcome contributions to improve the demo! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
-
-### Development Workflow
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests and documentation
-5. Submit a pull request
-
-### Code Standards
-- **Python**: Follow PEP 8, use type hints
-- **TypeScript**: Follow TSLint rules, use strict typing
-- **YAML**: Use consistent indentation and naming
-- **Documentation**: Update README and inline comments
-
-## 📝 License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [llm-d Community](https://llm-d.ai/) for the distributed inference framework
-- [vLLM Team](https://github.com/vllm-project/vllm) for the high-performance inference engine
-- [Envoy Gateway](https://gateway.envoyproxy.io/) for the intelligent gateway capabilities
-- [Kubernetes SIG Network](https://github.com/kubernetes-sigs/gateway-api) for the Gateway API
-
-## 📞 Support
-
-- **Documentation**: [llm-d.ai/docs](https://llm-d.ai/docs)
-- **Community Slack**: [llm-d Slack](https://inviter.co/llm-d-slack)
-- **Issues**: [GitHub Issues](https://github.com/llm-d/llm-d-demo/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/llm-d/llm-d-demo/discussions)
-
----
-
-**Ready to experience the future of distributed LLM inference?** 
-
-```bash
-./scripts/deploy-demo.sh deploy
-```
-
-
-## 🎯 Cache-Aware Routing (NEW)
-
-**Production-ready cache-aware routing implementation that achieves 4x request concentration+x assets/cache-aware/deploy.sh*
-
-### Quick Start
-```bash
-cd assets/cache-aware
-./deploy.sh
-./cache-demo-test.sh
-```
-
-### Key Features
-- ✅ **4x Request Concentration**: Primary pod processes 160 additional queries
-- ✅ **Session Affinity**: 2-hour ClientIP stickiness for cache benefits  
-- ✅ **Live Monitoring**: Real-time cache metrics per pod
-- ✅ **Production Ready**: Stable configuration with Redis infrastructure
-- ✅ **EPP Ready**: Infrastructure prepared for advanced routing
-
-### Performance Results
-| Metric | Before | After | Improvement |
-|--------|--------|--------|-------------|
-| Primary Pod Queries | 40 | 200 | **4x** |
-| Request Concentration | 25% | 80% | **3.2x** |
-| Session Stickiness | None | 2h | **Persistent** |
-
-### Documentation
-- [Complete Implementation Guide](cache-aware-routing.md) - Detailed guide with troubleshooting
-- [Cache-Aware Assets](assets/cache-aware/) - Production-ready configuration files
-- [Testing Scripts](assets/cache-aware/cache-demo-test.sh) - Validation and performance testing
-
-**API Endpoint**: `https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com/v1/completions`
-
+## Links
+- Blog: see blog/ for architectural deep dives and demo details (left unchanged as requested)
+- Troubleshooting: monitoring/README.md for monitoring-specific steps
+- Advanced architecture details: assets/cache-aware/docs/ARCHITECTURE.md
+- Metrics details: assets/cache-aware/docs/METRICS.md
 
