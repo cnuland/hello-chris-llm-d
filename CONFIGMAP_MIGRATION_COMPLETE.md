@@ -52,7 +52,7 @@ spec:
       env:
         # All EPP configuration inline
     proxy:
-      image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
       connector: nixlv2
   decode:
     create: true

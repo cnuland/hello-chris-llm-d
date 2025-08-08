@@ -15,7 +15,7 @@ spec:
     modelName: llama-3-2-1b
     servicePort: 8000
     proxy:
-      image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
       secure: false
       connector: nixlv2
     parentRefs:

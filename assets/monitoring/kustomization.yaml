@@ -1,7 +1,0 @@
-resources:
-  - servicemonitor.yaml
-  - podmonitor.yaml
-  - epp-podmonitor.yaml
-  - comprehensive-podmonitor.yaml
-  - modelservice-servicemonitor.yaml
-  - metrics-service.yaml

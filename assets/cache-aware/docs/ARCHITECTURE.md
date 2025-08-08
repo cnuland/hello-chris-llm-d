@@ -18,13 +18,13 @@ The KV-Cache Aware Routing system implements intelligent request routing for LLM
   - GPU memory utilization: 90%
 
 #### Routing Proxy Sidecar
-- **Image**: `ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7`
+- **Image**: `ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0`
 - **Port**: 8000 (external facing)
 - **Function**: Routes requests to vLLM while maintaining session context
 - **Deployment**: Init container with `restartPolicy: Always` (sidecar behavior)
 
 #### External Processing Pod (EPP)
-- **Image**: `ghcr.io/llm-d/llm-d-inference-scheduler:v0.1.0`
+- **Image**: `ghcr.io/llm-d/llm-d-inference-scheduler:v0.2.1`
 - **Function**: Intelligent request routing based on:
   - KV-cache awareness
   - Load balancing
