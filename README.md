@@ -104,7 +104,7 @@ Files of record
 
 
 ## Links
-- Blog: see blog/ for architectural deep dives and demo details (left unchanged as requested)
+- Blog: see blog/ for architectural deep dives and demo details
 - Troubleshooting: monitoring/README.md for monitoring-specific steps
 - Advanced architecture details: assets/cache-aware/docs/ARCHITECTURE.md
 - Metrics details: assets/cache-aware/docs/METRICS.md
