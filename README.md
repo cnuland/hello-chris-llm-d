@@ -12,7 +12,7 @@ Prerequisites and setup
 - Recommended: install the base infrastructure with llm-d-infra before deploying this repo’s demo components
 
 Install the base infrastructure first (recommended)
-- This repository vendors llm-d-infra under llm-d-infra/. Use its quickstart to prepare namespaces, gateway, and optional monitoring.
+- This repository deploys llm-d-infra under llm-d-infra/. Use its quickstart to prepare namespaces, gateway, and optional monitoring.
 - Example:
   - cd llm-d-infra/quickstart
   - ./install-deps.sh   # installs helm/helmfile, kustomize, yq, etc.
