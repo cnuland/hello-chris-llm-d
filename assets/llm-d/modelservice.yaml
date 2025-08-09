@@ -1,53 +1,38 @@
 apiVersion: llm-d.ai/v1alpha1
 kind: ModelService
 metadata:
-  name: llama-3-2-1b
+  name: llama-3-2-3b-instruct
   namespace: llm-d
   labels:
     app.kubernetes.io/name: cache-aware-routing
     version: v0.2.0
 spec:
   modelArtifacts:
-    uri: "hf://meta-llama/Llama-3.2-1B"
+    uri: "hf://meta-llama/Llama-3.2-3B-Instruct"
     size: 50Gi
     authSecretName: "llm-d-hf-token"
 
   routing:
-    modelName: meta-llama/Llama-3.2-1B
-    servicePort: 8000
-    proxy:
-      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
-      secure: false
-      connector: nixlv2
-    parentRefs:
+    modelName: meta-llama/Llama-3.2-3B-Instruct
+    ports:
+    - name: inference
+      port: 8000
+    gatewayRefs:
     - group: gateway.networking.k8s.io
       kind: Gateway
       name: llm-d-gateway
       namespace: llm-d
-    epp:
-      create: true
-    httpRoute:
-      create: true
-    inferenceModel:
-      create: true
-      criticality: Critical
-    inferencePool:
-      create: true
-      name: llama-3-2-1b-pool
 
   decode:
-    create: true
-    replicas: 3
+    replicas: 1
     acceleratorTypes:
       labelKey: nvidia.com/gpu.present
       labelValues:
       - "true"
     containers:
-    - name: "vllm"
-      image: "ghcr.io/llm-d/llm-d:v0.2.0"
-      modelCommand: vllmServe
+    - name: vllm
+      image: ghcr.io/llm-d/llm-d:v0.2.0
       args:
-        # KV-cache optimizations for maximum cache hit rates
         - "--enable-prefix-caching"
         - "--prefix-caching-hash-algo=builtin"
         - "--block-size=16"
@@ -58,7 +43,6 @@ spec:
         - "--max-num-seqs=256"
         - "--enforce-eager"
         - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
-        - "--port=8001"
       env:
       - name: VLLM_NIXL_SIDE_CHANNEL_HOST
         valueFrom:
@@ -68,55 +52,26 @@ spec:
         value: "5557"
       - name: PYTHONHASHSEED
         value: "42"
-      - name: CUDA_VISIBLE_DEVICES
-        value: "0"
-      - name: UCX_TLS
-        value: "cuda_ipc,cuda_copy,tcp"
-      - name: VLLM_LOGGING_LEVEL
-        value: DEBUG
       - name: HF_TOKEN
         valueFrom:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
-      ports:
-      - containerPort: 5557
-        protocol: TCP
-        name: nixl
-      - containerPort: 8001
-        protocol: TCP
-        name: vllm
-      - containerPort: 8200
-        name: metrics
-        protocol: TCP
       resources:
         limits:
           nvidia.com/gpu: "1"
         requests:
           nvidia.com/gpu: "1"
       mountModelVolume: true
-      volumeMounts:
-      - name: metrics-volume
-        mountPath: /.config
-      - name: torch-compile-cache
-        mountPath: /.cache
-    volumes:
-    - name: metrics-volume
-      emptyDir: {}
-    - name: torch-compile-cache
-      emptyDir: {}
 
   prefill:
-    create: true
-    replicas: 2
+    replicas: 1
     containers:
-    - name: "vllm"
-      image: "ghcr.io/llm-d/llm-d:v0.2.0"
-      modelCommand: vllmServe
+    - name: vllm
+      image: ghcr.io/llm-d/llm-d:v0.2.0
       args:
         - "--enforce-eager"
         - "--kv-transfer-config={\"kv_connector\":\"NixlConnector\", \"kv_role\":\"kv_both\"}"
-        - "--port=8000"
         - "--max-model-len=4096"
         - "--max-num-seqs=32"
       env:
@@ -133,26 +88,9 @@ spec:
           secretKeyRef:
             key: HF_TOKEN
             name: llm-d-hf-token
-      ports:
-      - containerPort: 8000
-        protocol: TCP
-        name: vllm
-      - containerPort: 5557
-        protocol: TCP
-        name: nixl
       resources:
         limits:
           nvidia.com/gpu: "1"
         requests:
           nvidia.com/gpu: "1"
       mountModelVolume: true
-      volumeMounts:
-      - name: metrics-volume
-        mountPath: /.config
-      - name: torch-compile-cache
-        mountPath: /.cache
-    volumes:
-    - name: metrics-volume
-      emptyDir: {}
-    - name: torch-compile-cache
-      emptyDir: {}

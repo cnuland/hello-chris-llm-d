@@ -17,6 +17,8 @@ spec:
       labels:
         app: llm-d-backend
         component: backend
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - env:
@@ -24,10 +26,10 @@ spec:
           value: production
         - name: PORT
           value: "3001"
-        - name: LLM_SERVICE_URL
-          value: "http://llama-3-2-1b-decode-service.llm-d.svc.cluster.local:8000"
+- name: LLM_SERVICE_URL
+          value: "http://llama-3-2-3b-instruct-decode-service.llm-d.svc.cluster.local:8000"
         - name: EPP_SERVICE_URL
-          value: "http://llama-3-2-1b-epp-service.llm-d.svc.cluster.local:9002"
+          value: "http://llama-3-2-3b-instruct-epp-service.llm-d.svc.cluster.local:9002"
         - name: PROMETHEUS_URL
           value: "http://prometheus-server.monitoring.svc.cluster.local:80"
         image: quay.io/cnuland/llm-interface:backend-amd64

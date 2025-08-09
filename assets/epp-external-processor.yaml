@@ -22,7 +22,7 @@ spec:
           '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
           grpc_service:
             envoy_grpc:
-              cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
+              cluster_name: outbound|9002||llama-3-2-3b-instruct-epp-service.llm-d.svc.cluster.local
           processing_mode:
             request_header_mode: SEND
             response_header_mode: SKIP

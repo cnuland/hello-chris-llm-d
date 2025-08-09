@@ -62,7 +62,7 @@ The result is a scheduling layer that finds the pod with the longest sequence of
 
 ## Component Versions
 
-This guide uses the latest llm-d v0.2.0 components for optimal KV-cache-aware routing performance:
+This guide uses the latest llm-d v0.2.x components for optimal KV-cache-aware routing performance:
 
 - **vLLM Inference Engine**: `ghcr.io/llm-d/llm-d:v0.2.0` (includes vLLM v0.10.0)
 - **Routing Proxy Sidecar**: `ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0`
@@ -75,31 +75,36 @@ This guide uses the latest llm-d v0.2.0 components for optimal KV-cache-aware ro
 To follow this guide, you should have:
 
 - OpenShift or Kubernetes with GPU-enabled nodes  
-- The [llm-d Operator](https://llm-d.ai/docs/guide/Installation/prerequisites) installed  
+- llm-d infrastructure installed either via Helm (used in this demo) or via the Operator  
 - A Hugging Face token (for downloading LLaMA or other models)
 - [Project Code & Performace Test on GitHub](https://github.com/cnuland/hello-chris-llm-d)  
 ---
 
 ## 🔧 Core Configurations
 
-### (1) ModelService: The Central Resource
+### Deployment paths (choose one)
+
+- Helm-based (this demo): The llm-d infra Helm charts deploy the gateway and EPP. ModelService does not automatically create InferencePool/InferenceModel; you will create them (or your infra will) to initialize the pool.
+- Operator-driven (alternative): The Operator can manage EPP and HTTPRoute from ModelService.spec.routing (epp.create/httpRoute.create). If you use this, you do not need to create pools manually.
+
+### (1) ModelService: The Central Resource (3B Instruct)
 
 ```yaml
 apiVersion: llm-d.ai/v1alpha1
 kind: ModelService
 metadata:
-  name: llama-3-2-1b
+  name: llama-3-2-3b-instruct
   namespace: llm-d
   labels:
     app.kubernetes.io/name: cache-aware-routing
 spec:
   modelArtifacts:
-    uri: "hf://meta-llama/Llama-3.2-1B"
+    uri: "hf://meta-llama/Llama-3.2-3B-Instruct"
     size: 50Gi
     authSecretName: "llm-d-hf-token"
 
   routing:
-    modelName: meta-llama/Llama-3.2-1B
+    modelName: meta-llama/Llama-3.2-3B-Instruct
     servicePort: 8000
     proxy:
       image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
@@ -123,7 +128,7 @@ spec:
         # KV-cache optimizations for maximum cache hit rates
         - "vllm"
         - "serve"
-        - "meta-llama/Llama-3.2-1B"
+        - "meta-llama/Llama-3.2-3B-Instruct"
         - "--host=0.0.0.0"
         - "--port=8001"
         - "--enable-prefix-caching"
@@ -190,7 +195,7 @@ spec:
       args:
         - "vllm"
         - "serve"
-        - "meta-llama/Llama-3.2-1B"
+        - "meta-llama/Llama-3.2-3B-Instruct"
         - "--host=0.0.0.0"
         - "--port=8000"
         - "--enforce-eager"
@@ -216,13 +221,15 @@ spec:
           nvidia.com/gpu: "1"
 ```
 
-### (2) HTTPRoute: Gateway Integration
+### (2) HTTPRoute: Gateway Integration (OpenShift)
+
+If you expose the Istio Inference Gateway via an OpenShift Route, ensure the HTTPRoute hostnames match the external Route host you create. Replace the hostname below with your actual route host.
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: llama-3-2-1b-route
+  name: llama-3-2-3b-instruct-route
   namespace: llm-d
 spec:
   parentRefs:
@@ -230,7 +237,7 @@ spec:
     kind: Gateway
     name: llm-d-gateway
   hostnames:
-  - "llm-d.example.com"
+  - "llm-d-inference-gateway-llm-d.apps.<your-cluster-domain>"
   rules:
   - matches:
     - path:
@@ -239,7 +246,7 @@ spec:
     backendRefs:
     - group: ""
       kind: Service
-      name: llama-3-2-1b-service
+      name: llama-3-2-3b-instruct-service
       port: 8000
 ```
 
@@ -272,7 +279,7 @@ spec:
           '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
           grpc_service:
             envoy_grpc:
-              cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
+              cluster_name: outbound|9002||llama-3-2-3b-instruct-epp-service.llm-d.svc.cluster.local
           processing_mode:
             request_header_mode: SEND
             response_header_mode: SKIP
@@ -280,6 +287,45 @@ spec:
     labels:
       istio: ingressgateway
 ```
+
+---
+
+## Helm vs Operator: Resource Ownership
+
+- Helm path (this demo): The infra chart deploys the inference gateway and EPP. You may need to create or ensure InferencePool and InferenceModel resources exist for the EPP to initialize pools.
+- Operator path: ModelService.spec.routing can own the EPP and HTTPRoute and create backing resources automatically.
+
+### InferencePool and InferenceModel (Helm/manual path)
+
+Create resources that match your ModelService naming to initialize the pool used by the EPP.
+
+```yaml
+apiVersion: llm-d.ai/v1alpha1
+kind: InferencePool
+metadata:
+  name: llm-d
+  namespace: llm-d
+spec:
+  selector:
+    matchLabels:
+      llm-d.ai/inferenceServing: "true"
+  extensionRef:
+    name: llama-3-2-3b-instruct
+---
+apiVersion: llm-d.ai/v1alpha1
+kind: InferenceModel
+metadata:
+  name: llama-3-2-3b-instruct
+  namespace: llm-d
+spec:
+  poolRef:
+    name: llm-d
+  modelName: meta-llama/Llama-3.2-3B-Instruct
+```
+
+Validation signals:
+- EPP logs stop showing: "Pool is not initialized, skipping refreshing metrics"
+- GET /v1/models via the gateway returns your model list with 200
 
 ---
 
@@ -385,7 +431,7 @@ name: envoy.filters.http.ext_proc
 typed_config:
   grpc_service:
     envoy_grpc:
-      cluster_name: outbound|9002||llama-3-2-1b-epp-service.llm-d.svc.cluster.local
+      cluster_name: outbound|9002||llama-3-2-3b-instruct-epp-service.llm-d.svc.cluster.local
   processing_mode:
     request_header_mode: SEND  # Send headers to EPP for routing decisions
     response_header_mode: SKIP # Don't modify responses
@@ -489,7 +535,7 @@ One of the most immediate and noticeable benefits of KV-cache-aware routing is t
 ### Real-World TTFT Measurements
 
 **Test Configuration:**
-- Model: meta-llama/Llama-3.2-1B
+- Model: meta-llama/Llama-3.2-3B-Instruct
 - Prompt Length: 1,024 tokens (typical RAG context)
 - Cache Block Size: 16 tokens
 - GPU: NVIDIA A100 40GB
@@ -568,28 +614,19 @@ The **87.4% cache hit rate achieving 85% TTFT improvement** represents a product
 
 ---
 
-## 🔴 Enterprise Cost Optimization
+## OpenShift-specific Notes
 
-The TTFT improvements from KV-cache-aware routing deliver particularly strong value for **Red Hat OpenShift** deployments, where efficient resource utilization directly translates to reduced infrastructure costs and improved ROI.
+### Gateway exposure and hostnames
+- Expose the Istio Inference Gateway via a passthrough Route.
+- Ensure your HTTPRoute hostnames include the external Route host. Use the Host header in curl to match the HTTPRoute.
 
-### OpenShift-Specific Advantages
+### SCC and sidecar injection
+- If images require non-root or additional capabilities, grant anyuid/privileged SCC to the service accounts as needed, or use compliant images.
+- For non-model sample apps (frontend/backend) you may disable Istio sidecar injection to avoid NET_ADMIN/NET_RAW bootstrap issues on OpenShift. These apps are optional and not core to cache-aware routing.
 
-**⚙️ Multi-Tenancy Efficiency**
-- **Shared GPU Resources**: Cache-aware routing maximizes GPU utilization across multiple tenants
-- **Namespace Isolation**: Different teams benefit from shared cache efficiency without sacrificing security
-- **Resource Quotas**: Faster TTFT allows higher request density within existing resource limits
-
-**🔄 Auto-Scaling Benefits**
-- **Reduced Scale-Out Triggers**: 78% TTFT improvement delays the need for additional pods
-- **Faster Scale-In**: Quick cache hits enable more aggressive downscaling during low traffic
-- **HPA Optimization**: Horizontal Pod Autoscaler can maintain SLAs with fewer replicas
-
-**📊 Cluster Resource Optimization**
-- **Node Consolidation**: Higher efficiency allows workload consolidation on fewer nodes
-- **Power Efficiency**: Reduced compute time directly correlates to lower power consumption
-- **Storage Optimization**: Less GPU memory thrashing extends hardware lifespan
-
-For organizations running LLM workloads on **Red Hat OpenShift**, KV-cache-aware routing represents a **force multiplier** that transforms both technical performance and business economics, delivering nearly **10x ROI** while maintaining enterprise-grade security and operational excellence.
+### EPP readiness troubleshooting
+- If EPP startup is slow, consider TCP-based readiness/liveness probes or increasing initial delay.
+- Healthy logs: look for reconciliation activity and disappearance of "Pool is not initialized" messages.
 
 ---
 
