@@ -501,7 +501,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "\navg (\n    label_replace(\n      DCGM_FI_DEV_GPU_UTIL, \"pod\", \"$1\", \"exported_pod\", \"(.+)\"\n    )\n    * on(pod) group_left(model_name)\n    group by (pod, model_name) (vllm:num_requests_running{model_name=\"Qwen/Qwen3-0.6B\"})\n)",
+          "expr": "\navg (\n    label_replace(\n      DCGM_FI_DEV_GPU_UTIL, \"pod\", \"$1\", \"exported_pod\", \"(.+)\"\n    )\n    * on(pod) group_left(model_name)\n    group by (pod, model_name) (vllm:num_requests_running{model_name=~\"$model\", namespace=~\"$namespace\"})\n)",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -575,7 +575,7 @@
         {
           "editorMode": "code",
           "exemplar": false,
-          "expr": "avg by (pod) (\n  label_replace(\n    DCGM_FI_DEV_GPU_UTIL, \"pod\", \"$1\", \"exported_pod\", \"(.+)\"\n  )\n  * on(pod) group_left(instance, model_name)\n  group by (pod, instance, model_name) (\n    vllm:num_requests_running{model_name=\"Qwen/Qwen3-0.6B\", namespace=\"llm-d-inference-scheduling\"}\n  )\n)\n",
+          "expr": "avg by (pod) (\n  label_replace(\n    DCGM_FI_DEV_GPU_UTIL, \"pod\", \"$1\", \"exported_pod\", \"(.+)\"\n  )\n  * on(pod) group_left(instance, model_name)\n  group by (pod, instance, model_name) (\n    vllm:num_requests_running{model_name=~\"$model\", namespace=~\"$namespace\"}\n  )\n)\n",
           "instant": false,
           "legendFormat": "Pod {{pod}}",
           "range": true,
