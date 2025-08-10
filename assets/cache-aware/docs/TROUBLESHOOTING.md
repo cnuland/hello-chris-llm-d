@@ -13,16 +13,16 @@
 ### Session Stickiness Problems
 - **Problem**: Requests are not targeting the same pod consistently.
 - **Solution**:
-  - Verify `ClientIP` session affinity is set on the primary service.
-  - Ensure client IPs are persistently routed.
-  - Confirm HTTPRoute configuration is correct and pointing to the cache-aware service.
+  - Verify `ClientIP` session affinity is set where applicable.
+  - Ensure client IPs are persistently routed (or provide stable session headers).
+  - Confirm HTTPRoute routes /v1 to the EPP service and that the Host header matches.
 
 ### Request Latency Issues
 - **Problem**: Increased latency for cached or uncached requests.
 - **Solution**:
-  - Check vLLM and routing logs for any errors or timeouts.
+  - Check vLLM and EPP logs for any errors or timeouts (Envoy ext-proc).
   - Verify pod resource allocations and that they are not being throttled.
-  - Ensure full health of all involved services and nodes.
+  - Ensure the Host header matches the HTTPRoute and the EPP service is reachable.
 
 ### Deployment Failures
 - **Problem**: Pods fail to start or crash frequently.
@@ -30,6 +30,7 @@
   - Check pod logs for detailed error messages.
   - Validate Kubernetes manifests for correct syntax and field usage.
   - Ensure all referenced images are available and accessible.
+  - Verify InferencePool/InferenceModel CRs exist and reference the correct pool/model name.
 
 ## Performance Optimizations
 

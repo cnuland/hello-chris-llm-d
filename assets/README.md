@@ -57,20 +57,34 @@ assets/
 
 ## 🚀 Deployment
 
-### Prerequisites
-- LLM-D operator installed
-- Istio or Gateway API configured
-- GPU nodes available
+Prereqs:
+- Namespace: llm-d
+- Hugging Face token secret:
 
-### Deploy Everything
-```bash
-kubectl apply -k assets/
+```
+kubectl create namespace llm-d 2>/dev/null || true
+kubectl -n llm-d create secret generic llm-d-hf-token \
+  --from-literal=HF_TOKEN={{HF_TOKEN}} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### Deploy Only LLM-D
-```bash
-kubectl apply -k assets/llm-d/
+Apply all LLM-D gateway, EPP, and decode components at once with Kustomize:
+
 ```
+kubectl apply -k assets/llm-d
+kubectl -n llm-d rollout status deploy/ms-llm-d-modelservice-decode
+```
+
+Validate via the gateway (replace <LB> if you prefer direct IP):
+
+```
+LB=$(kubectl -n llm-d get svc llm-d-gateway-istio -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl -sS -H 'Host: llm-d.demo.local' http://$LB/v1/models | jq .
+curl -sS -H 'Host: llm-d.demo.local' http://$LB/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"meta-llama/Llama-3.2-3B-Instruct","messages":[{"role":"user","content":"Say hello from LLM-D"}],"max_tokens":16}' | jq .
+```
+
+For Tekton-based cache tests, apply the Tekton assets and run the task afterward.
 
 ## 📊 Monitoring
 

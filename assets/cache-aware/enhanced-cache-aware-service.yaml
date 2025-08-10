@@ -1,7 +1,9 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: llama-3-2-1b-cache-aware-service-enhanced
+# DEPRECATED: legacy 1B service (archived under assets/cache-aware/legacy/)
+# Use the canonical demo instead:
+#  - assets/llm-d/
+#  - assets/envoyfilter-epp.yaml
+#  - assets/inference-crs.yaml
+#  - assets/cache-aware/tekton/cache-hit-pipeline.yaml
   namespace: llm-d
   labels:
     app: cache-aware-enhanced

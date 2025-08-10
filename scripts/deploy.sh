@@ -33,7 +33,8 @@ Flags:
 
 Core manifests:
   - kustomize: assets/llm-d
-  - EnvoyFilter: assets/epp-external-processor.yaml
+  - EnvoyFilter: assets/envoyfilter-epp.yaml
+  - Inference CRs: assets/inference-crs.yaml
 Optional monitoring (applied in order):
   - monitoring/prometheus-config.yaml
   - monitoring/prometheus.yaml
@@ -52,7 +53,8 @@ done
 # Build command lists
 CORE_CMDS=(
   "kubectl apply -k assets/llm-d"
-  "kubectl apply -f assets/epp-external-processor.yaml"
+  "kubectl apply -f assets/envoyfilter-epp.yaml"
+  "kubectl apply -f assets/inference-crs.yaml"
 )
 MON_CMDS=(
   "kubectl apply -f monitoring/prometheus-config.yaml"

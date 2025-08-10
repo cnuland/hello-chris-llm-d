@@ -33,39 +33,35 @@ The KV-Cache Aware Routing system implements intelligent request routing for LLM
 
 ### 2. Service Architecture
 
-#### Cache-Aware Service
-- **Name**: `llama-3-2-1b-cache-aware-service`
-- **Type**: ClusterIP with session affinity
-- **Session Affinity**: ClientIP with 2-hour timeout
-- **Ports**:
-  - 8000: Routing proxy (external requests)
-  - 8001: Direct vLLM access (internal)
+#### EPP Gateway Path
+- **HTTPRoute**: Routes `/v1/*` traffic to the EPP service (ms-llm-d-modelservice-epp:9002)
+- **EnvoyFilter**: External Processing filter forwards requests to EPP gRPC (assets/envoyfilter-epp.yaml)
+- **Health Path**: `/v1/models` goes to decode Service (ms-llm-d-modelservice-decode:8000)
 
 #### External Gateway
-- **HTTPRoute**: Routes `/v1/*` traffic to cache-aware service
-- **Hostname**: `llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com`
-- **TLS**: Automatically managed by OpenShift
+- **Gateway**: In-cluster Istio gateway Service (llm-d-gateway-istio.llm-d.svc.cluster.local)
+- **Routing**: Host header (llm-d.demo.local) used to match HTTPRoute on the gateway
 
 ### 3. Request Flow
 
 ```
-External Client
+Client (with Host header)
     ↓
-HTTPRoute (/v1/*)
+Istio Gateway
     ↓
-Cache-Aware Service (port 8000)
-    ↓ (Session Affinity)
-Routing Proxy Sidecar
+Envoy ext-proc → EPP (gRPC)
+    ↓ (picks best decode pod based on KV cache + session)
+HTTPRoute backend
     ↓
-vLLM Engine (port 8001)
+Decode vLLM (8000/8001 metrics)
 ```
 
 ### 4. Caching Strategy
 
 #### Prefix Caching
-- **Algorithm**: Builtin hash for optimal performance
+- **Algorithm**: builtin or sha256_cbor_64bit depending on configuration
 - **Block Size**: 16 tokens (balances cache granularity vs. memory)
-- **Hit Rate**: Consistently achieves 80%+ cache hit rates
+- **Hit Rate**: Target ≥85%+ during demo validator loop
 
 #### Session Affinity
 - **Method**: ClientIP-based routing

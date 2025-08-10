@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: ms-llm-d-modelservice-decode-session-affinity
+  namespace: llm-d
+spec:
+  host: ms-llm-d-modelservice-decode.llm-d.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: "x-session-id"
+    connectionPool:
+      tcp:
+        maxConnections: 200
+      http:
+        http1MaxPendingRequests: 1000
+        http2MaxRequests: 2000
+        maxRequestsPerConnection: 100
+        idleTimeout: 900s

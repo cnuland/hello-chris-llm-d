@@ -19,18 +19,13 @@ kubectl apply -f cache-hit-pipeline.yaml
 echo "✅ Task and Pipeline deployed"
 echo ""
 
-# Run the pipeline
-echo "🏃 Starting cache hit test pipeline run..."
-kubectl create -f cache-hit-pipelinerun.yaml
+# Start the Task directly for simplicity
+echo "🏃 Starting cache-hit-test Task..."
+tkn task start cache-hit-test -n llm-d --param host=llm-d.demo.local --showlog
 
-# Get the latest PipelineRun name
-sleep 2
-PIPELINE_RUN=$(kubectl get pipelinerun --sort-by=.metadata.creationTimestamp -o name | grep cache-hit-run | tail -1 | cut -d'/' -f2)
-
-echo "✅ Pipeline run started: $PIPELINE_RUN"
 echo ""
-echo "📊 Monitor the pipeline run with:"
-echo "   kubectl get pipelinerun $PIPELINE_RUN -w"
+echo "📊 Monitor with:"
+echo "   tkn taskrun list -n llm-d"
 echo ""
 echo "📋 View logs with:"
 echo "   tkn pipelinerun logs $PIPELINE_RUN -f"

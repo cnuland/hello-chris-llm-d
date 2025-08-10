@@ -28,16 +28,15 @@ spec:
 
 ### Key Metrics
 
-#### Cache Performance Metrics
-- **`vllm:cache_config_info`**: Cache configuration details
-- **`vllm:cache_usage_percent`**: Current cache utilization percentage
-- **`vllm:num_requests_running`**: Active requests being processed
-- **`vllm:num_requests_waiting`**: Queued requests waiting for processing
+#### KV-Cache Specific Metrics (used by validator)
+- vllm:prefix_cache_queries_total
+- vllm:prefix_cache_hits_total
+- Cache Hit Rate: Calculated as `hits/queries * 100` over the measured loop
 
-#### KV-Cache Specific Metrics
-- **Cache Queries**: Total number of cache lookup operations
-- **Cache Hits**: Number of successful cache retrievals
-- **Cache Hit Rate**: Calculated as `hits/queries * 100`
+#### Additional vLLM Metrics (optional)
+- vllm:num_requests_running
+- vllm:num_requests_waiting
+- vllm:cache_usage_percent
 
 #### Request Metrics
 - **Request Latency**: Time taken to process requests
@@ -48,12 +47,10 @@ spec:
 
 ### Direct Pod Access
 ```bash
-# Access metrics from a specific pod
-kubectl exec -it <pod-name> -n llm-d -c vllm -- curl localhost:8001/metrics
-
-# Example for cache metrics
-kubectl exec -it llama-3-2-1b-decode-67cb95968f-289qk -n llm-d -c vllm -- \
-  curl -s localhost:8001/metrics | grep -E "(cache|hit|query)"
+# Access metrics from a decode pod (port may be 8200 or 8001 depending on args)
+POD=$(kubectl get pods -n llm-d -l 'llm-d.ai/role=decode' -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -it $POD -n llm-d -c vllm -- sh -c 'curl -s localhost:8200/metrics || curl -s localhost:8001/metrics' | \
+  grep -E '(prefix_cache_queries_total|prefix_cache_hits_total)'
 ```
 
 ### Via Prometheus Query
@@ -80,11 +77,11 @@ tkn pipeline start cache-hit-pipeline -n llm-d --use-param-defaults --showlog
 
 ### Manual Cache Testing
 
-For manual cache testing:
+For manual cache testing via gateway:
 
 ```bash
-# Run the cache test script
-./cache-test.sh
+# Run the canonical cache test script (in-cluster gateway + Host header)
+bash assets/cache-aware/canonical-cache-test.sh
 ```
 
 This script:
@@ -180,16 +177,20 @@ The Tekton pipeline provides automated validation:
 - Reports detailed results
 
 ### Manual Validation Commands
-
 ```bash
 # Check current cache metrics
-kubectl exec -it $(kubectl get pods -n llm-d -l app=llama-3-2-1b-decode -o jsonpath='{.items[0].metadata.name}') -n llm-d -c vllm -- \
-  curl -s localhost:8001/metrics | grep -E "(cache|hit)"
+POD=$(kubectl get pods -n llm-d -l 'llm-d.ai/role=decode' -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -it $POD -n llm-d -c vllm -- \
+  sh -c 'curl -s http://localhost:8200/metrics || curl -s http://localhost:8001/metrics' | \
+  grep -E '(prefix_cache_queries_total|prefix_cache_hits_total)'
 
-# Test session affinity
+# Test routing with Host header and 3B model
+GW=http://llm-d-gateway-istio.llm-d.svc.cluster.local
+HOST=llm-d.demo.local
 for i in {1..5}; do
-  curl -H "X-Session-ID: test-123" \
-    https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com/v1/completions \
-    -d '{"model":"meta-llama/Llama-3.2-1B","prompt":"Hello","max_tokens":5}'
+  curl -sk -H "Host: $HOST" -H "Content-Type: application/json" \
+    -X POST "$GW/v1/completions" \
+    -d '{"model":"meta-llama/Llama-3.2-3B-Instruct","prompt":"Hello","max_tokens":5}'; echo
 done
+```
 ```

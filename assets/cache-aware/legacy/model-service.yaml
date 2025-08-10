@@ -1,12 +1,10 @@
-# DEPRECATED: legacy 1B enhanced ModelService demo (archived under assets/cache-aware/legacy/)
-# Use the canonical demo instead:
-#  - assets/llm-d/
-#  - assets/envoyfilter-epp.yaml
-#  - assets/inference-crs.yaml
-#  - assets/cache-aware/tekton/cache-hit-pipeline.yaml
+apiVersion: llm-d.ai/v1alpha1
+kind: ModelService
+metadata:
+  name: llama-3-2-1b
   namespace: llm-d
   labels:
-    app: enhanced-cache-aware-routing
+    app: cache-aware-routing
 spec:
   modelArtifacts:
     uri: "hf://meta-llama/Llama-3.2-1B"
@@ -14,10 +12,10 @@ spec:
     authSecretName: "llm-d-hf-token"
 
   routing:
-    modelName: llama-3-2-1b-enhanced
+    modelName: llama-3-2-1b
     servicePort: 8000
     proxy:
-      image: ghcr.io/llm-d/llm-d-routing-sidecar:0.0.7
+      image: ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0
       secure: false
       connector: nixlv2
     parentRefs:
@@ -27,67 +25,6 @@ spec:
       namespace: llm-d
     epp:
       create: true
-      # Enhanced EPP configuration with session-aware scoring
-      env:
-      - name: ENABLE_KVCACHE_AWARE_SCORER
-        value: "true"
-      - name: ENABLE_LOAD_AWARE_SCORER
-        value: "true"
-      - name: ENABLE_PREFIX_AWARE_SCORER
-        value: "true"
-      - name: ENABLE_SESSION_AWARE_SCORER
-        value: "true"
-      # Enhanced scoring weights for session stickiness
-      - name: KVCACHE_AWARE_SCORER_WEIGHT
-        value: "10"
-      - name: LOAD_AWARE_SCORER_WEIGHT
-        value: "1"
-      - name: PREFIX_AWARE_SCORER_WEIGHT
-        value: "5"
-      - name: SESSION_AWARE_SCORER_WEIGHT
-        value: "20"
-      # Session scoring configuration
-      - name: SESSION_SCORING_ALGORITHM
-        value: "sticky_hash"
-      - name: SESSION_HEADER_NAMES
-        value: "session-id,x-session-id,authorization"
-      - name: SESSION_STICKY_DURATION
-        value: "3600"
-      - name: SESSION_HASH_KEY_COUNT
-        value: "3"
-      # KV-cache indexing with faster updates
-      - name: KVCACHE_INDEXER_REDIS_ADDR
-        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
-      - name: KVCACHE_INDEX_UPDATE_INTERVAL
-        value: "500ms"
-      - name: KVCACHE_INDEX_BATCH_SIZE
-        value: "10"
-      # P/D Disaggregation ENABLED with enhanced routing
-      - name: PD_ENABLED
-        value: "true"
-      - name: PD_PROMPT_LEN_THRESHOLD
-        value: "10"
-      - name: PD_CACHE_AWARE_ROUTING
-        value: "true"
-      # Enhanced prefill scoring
-      - name: PREFILL_ENABLE_KVCACHE_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_ENABLE_LOAD_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_ENABLE_PREFIX_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_ENABLE_SESSION_AWARE_SCORER
-        value: "true"
-      - name: PREFILL_KVCACHE_AWARE_SCORER_WEIGHT
-        value: "10"
-      - name: PREFILL_KVCACHE_INDEXER_REDIS_ADDR
-        value: llm-d-operator-redis-master.llm-d.svc.cluster.local:8100
-      - name: PREFILL_LOAD_AWARE_SCORER_WEIGHT
-        value: "1"
-      - name: PREFILL_PREFIX_AWARE_SCORER_WEIGHT
-        value: "5"
-      - name: PREFILL_SESSION_AWARE_SCORER_WEIGHT
-        value: "15"
     httpRoute:
       create: true
     inferenceModel:
@@ -95,7 +32,7 @@ spec:
       criticality: Critical
     inferencePool:
       create: true
-      name: llama-3-2-1b-enhanced-pool
+      name: llama-3-2-1b-pool
 
   decode:
     create: true
@@ -109,7 +46,7 @@ spec:
       image: "ghcr.io/llm-d/llm-d:v0.2.0"
       modelCommand: vllmServe
       args:
-        # Enhanced cache-aware routing optimizations
+        # Cache-aware routing optimizations
         - "--enable-prefix-caching"
         - "--prefix-caching-hash-algo=builtin"
         - "--gpu-memory-utilization=0.7"
@@ -169,7 +106,6 @@ spec:
       image: "ghcr.io/llm-d/llm-d:v0.2.0"
       modelCommand: vllmServe
       args:
-        # Enhanced prefill cache-aware routing optimizations
         - "--enable-prefix-caching"
         - "--prefix-caching-hash-algo=builtin"
         - "--gpu-memory-utilization=0.7"
@@ -216,3 +152,4 @@ spec:
         requests:
           nvidia.com/gpu: "1"
       mountModelVolume: true
+

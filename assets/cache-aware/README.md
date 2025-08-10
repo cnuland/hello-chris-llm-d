@@ -33,32 +33,17 @@ This demo shows how to implement high-performance LLM inference with:
 
 ```bash
 # From the repo root
-kubectl apply -n llm-d -f assets/cache-aware/tekton/cache-pod-restart-pipeline.yaml
 kubectl apply -n llm-d -f assets/cache-aware/tekton/cache-hit-pipeline.yaml
 ```
 
-### Run the demo (restart -> ramp)
+### Run the validator task
 
 ```bash
-# 1) Restart decode pods to clear metrics/cache
-kubectl create -n llm-d -f assets/cache-aware/tekton/cache-pod-restart-pipelinerun.yaml
-
-# Wait for PipelineRun to succeed
-PR_RESTART=$(kubectl get pr -n llm-d -o name | grep cache-pod-restart-run | tail -1 | cut -d/ -f2)
-watch -n 5 kubectl get pr $PR_RESTART -n llm-d
-
-# 2) Start the ramp run (tiny warm-up, larger measured loop)
-kubectl create -n llm-d -f assets/cache-aware/tekton/cache-ramp-pipelinerun.yaml
-PR_RAMP=$(kubectl get pr -n llm-d -o name | grep cache-ramp-run | tail -1 | cut -d/ -f2)
-
-# 3) Tail logs and observe ramp-up (expect ~98% hit rate, excellent stickiness)
-kubectl get tr -n llm-d -l tekton.dev/pipelineRun=$PR_RAMP
-TR=$(kubectl get tr -n llm-d -l tekton.dev/pipelineRun=$PR_RAMP -o jsonpath='{.items[0].metadata.name}')
-POD=$(kubectl get pod -n llm-d -l tekton.dev/taskRun=$TR -o jsonpath='{.items[0].metadata.name}')
-kubectl logs $POD -n llm-d -c step-run-cache-hit-test -f
+# Start the validator Task directly (recommended)
+tkn task start cache-hit-test -n llm-d --param host=llm-d.demo.local --showlog
 ```
 
-Defaults in the pipeline point to the in-cluster Istio gateway service and host:
+Defaults point to the in-cluster Istio gateway service and host:
 - Gateway URL: http://llm-d-gateway-istio.llm-d.svc.cluster.local
 - Host header: llm-d.demo.local
 
@@ -70,9 +55,9 @@ Use the internal service URL and provide the Host header to match the HTTPRoute.
 GW=http://llm-d-gateway-istio.llm-d.svc.cluster.local
 HOST=llm-d.demo.local
 curl -sk -H "Host: $HOST" -H "Content-Type: application/json" \
-  -X POST "$GW/v1/chat/completions" -d '{
+  -X POST "$GW/v1/completions" -d '{
     "model": "meta-llama/Llama-3.2-3B-Instruct",
-    "messages": [{"role": "user", "content": "Write a story about AI"}],
+    "prompt": "Write a story about AI",
     "max_tokens": 50,
     "temperature": 0.0
   }'
@@ -88,9 +73,11 @@ curl -sk -H "Host: $HOST" -H "Content-Type: application/json" \
 
 ## Technical details
 
+- Model: meta-llama/Llama-3.2-3B-Instruct
 - vLLM Image: ghcr.io/llm-d/llm-d:v0.2.0 (vLLM v0.10.0)
 - Prefix cache metrics used: vllm:prefix_cache_queries_total, vllm:prefix_cache_hits_total
 - Session Affinity: ClientIP (2h)
+- EPP in path via Envoy ext-proc filtering (assets/envoyfilter-epp.yaml)
 
 ## Expected results
 

@@ -1,0 +1,30 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tekton-cache-test-metrics-reader
+  namespace: llm-d
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/exec"]
+  verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tekton-cache-test-metrics-reader
+  namespace: llm-d
+subjects:
+- kind: ServiceAccount
+  name: default
+  namespace: llm-d
+- kind: ServiceAccount
+  name: pipeline
+  namespace: llm-d
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tekton-cache-test-metrics-reader
+

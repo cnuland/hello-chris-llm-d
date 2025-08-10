@@ -5,8 +5,7 @@ This directory contains a Tekton Pipeline for automated testing of the LLM-D KV-
 ## Files
 
 - `cache-hit-pipeline.yaml` - Main Task and Pipeline definitions
-- `cache-hit-pipelinerun.yaml` - PipelineRun template with auto-generated names
-- `run-cache-test.sh` - Deployment and execution script
+- `run-cache-test.sh` - Convenience wrapper to apply the Task/Pipeline and start the Task directly
 - `README.md` - This documentation
 
 ## Features
@@ -33,8 +32,8 @@ This directory contains a Tekton Pipeline for automated testing of the LLM-D KV-
 
 ### Quick Start
 ```bash
-# Deploy and run the pipeline
-cd tekton/
+# Deploy the Task/Pipeline and run the Task
+dcd tekton/
 ./run-cache-test.sh
 ```
 
@@ -43,8 +42,8 @@ cd tekton/
 # Deploy Task and Pipeline
 kubectl apply -f cache-hit-pipeline.yaml
 
-# Run a test (creates new PipelineRun each time)
-kubectl create -f cache-hit-pipelinerun.yaml
+# Run the Task directly (recommended)
+tkn task start cache-hit-test -n llm-d --param host=llm-d.demo.local --showlog
 ```
 
 ### Custom Parameters

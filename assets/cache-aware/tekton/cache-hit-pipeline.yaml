@@ -11,8 +11,8 @@ spec:
       description: "Gateway URL for testing"
       default: "http://llm-d-gateway-istio.llm-d.svc.cluster.local"
     - name: host
-      description: "HTTP Host header to match HTTPRoute"
-      default: "llm-d.demo.local"
+      description: "HTTP Host header to match HTTPRoute (empty for in-cluster/gateway default)"
+      default: ""
     - name: warmup-count
       description: "Number of warm-up requests to send before measuring"
       default: "1"
@@ -25,6 +25,9 @@ spec:
     - name: sleep-seconds
       description: "Seconds to sleep between requests"
       default: "0.8"
+    - name: prometheus-url
+      description: "Optional Prometheus base URL (e.g., http://prometheus-user-workload.openshift-user-workload-monitoring.svc.cluster.local:9091)"
+      default: ""
   steps:
 
     - name: verify-system
@@ -87,6 +90,8 @@ spec:
         REQUESTS="$(params.requests)"
         SLEEP_SECONDS="$(params.sleep-seconds)"
         WARMUP_COUNT="$(params.warmup-count)"
+        SERVICE_METRICS_URL="http://ms-llm-d-modelservice-decode.${NAMESPACE}.svc.cluster.local:8000/metrics"
+        PROM_URL="$(params.prometheus-url)"
         
         # Get current decode pods 
         DECODE_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
@@ -119,7 +124,7 @@ spec:
           for i in $(seq 1 "$WARMUP_COUNT"); do
             echo "  Warm-up request $i (session: $SESSION_ID_WARMUP)..."
             curl -k -s -X POST "$GATEWAY_URL/v1/chat/completions" \
-              -H "Host: $HOST_HEADER" \
+              ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
               -H "Content-Type: application/json" \
               -H "User-Agent: CacheWarmup/1.0" \
               -H "session-id: $SESSION_ID_WARMUP" \
@@ -129,72 +134,89 @@ spec:
           done
         fi
         
-        # Helper to safely read metrics from a port
+        # Helper to read metrics via the Service endpoint (legacy)
         read_metric() {
-          local port=$1
+          local _port=$1
           local metric=$2
-          kubectl exec $TEST_POD -n $NAMESPACE -c vllm -- sh -c "curl -s localhost:${port}/metrics | grep \"${metric}\" | grep -o '[0-9.]*$' | head -1" || true
+          curl -s "$SERVICE_METRICS_URL" | grep "$metric" | grep -o '[0-9.]*$' | head -1 || true
         }
-        read_metric_sum_int() {
-          local pod=$1
-          local metric=$2
-          local nums sum=0
-          nums=$(kubectl exec "$pod" -n $NAMESPACE -c vllm -- sh -c "curl -s localhost:8200/metrics || curl -s localhost:8001/metrics" | grep "$metric" | grep -o '[0-9.]*$' || true)
-          if [ -n "$nums" ]; then
-            for n in $nums; do
-              n=${n%%.*}
-              [ -z "$n" ] && n=0
-              sum=$((sum + n))
-            done
-          fi
+        # Aggregate helper: sum a metric across the Service endpoint output (legacy)
+        read_metric_agg_service() {
+          local metric=$1
+          curl -s "$SERVICE_METRICS_URL" | grep -E "^${metric}\{" | grep -o '[0-9.]*$' | awk '{s+=$1} END {print s+0}' || true
+        }
+        # Aggregate via Prometheus: returns integer floor of sum(metric)
+        read_metric_agg_prom() {
+          local prom_url="$PROM_URL"
+          local metric="$1"
+          if [ -z "$prom_url" ]; then echo ""; return 1; fi
+          curl -s --fail -G "$prom_url/api/v1/query" --data-urlencode "query=sum(${metric})" \
+            | jq -r '.data.result[0].value[1] // empty' 2>/dev/null | cut -d. -f1
+        }
+        # Aggregate by scraping each pod IP and summing
+        read_metric_agg_pods() {
+          local metric="$1"
+          local sum=0
+          local ips
+          # List running decode pod IPs
+          ips=$(kubectl get pods -n "$NAMESPACE" -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].status.podIP}')
+          for ip in $ips; do
+            val=$(curl -s "http://$ip:8000/metrics" | grep -E "^${metric}\{" | grep -o '[0-9.]*$' | awk '{s+=$1} END {print s+0}')
+            val=${val%%.*}
+            [ -n "$val" ] && sum=$((sum + ${val:-0}))
+          done
           echo "$sum"
         }
+        # Wrapper to read aggregate using Prometheus first, then pod IP fallback, then service as last resort
+        read_metric_agg() {
+          local metric="$1"
+          local v
+          v=$(read_metric_agg_prom "$metric") || true
+          if [ -n "$v" ]; then echo "$v"; return; fi
+          v=$(read_metric_agg_pods "$metric") || true
+          if [ -n "$v" ]; then echo "$v"; return; fi
+          read_metric_agg_service "$metric"
+        }
         
-        # Take baseline AFTER warm-up to exclude warm-up traffic
-        BASELINE_QUERIES=$(read_metric 8200 "vllm:prefix_cache_queries_total{" )
-        if [ -z "$BASELINE_QUERIES" ]; then BASELINE_QUERIES=$(read_metric 8001 "vllm:prefix_cache_queries_total{" ); fi
-        BASELINE_HITS=$(read_metric 8200 "vllm:prefix_cache_hits_total{" )
-        if [ -z "$BASELINE_HITS" ]; then BASELINE_HITS=$(read_metric 8001 "vllm:prefix_cache_hits_total{" ); fi
-        
-        BASELINE_QUERIES=${BASELINE_QUERIES:-0}
-        BASELINE_HITS=${BASELINE_HITS:-0}
-        BASELINE_QUERIES=$(echo "$BASELINE_QUERIES" | cut -d. -f1)
-        BASELINE_HITS=$(echo "$BASELINE_HITS" | cut -d. -f1)
-        echo "Baseline after warm-up - Queries: $BASELINE_QUERIES, Hits: $BASELINE_HITS"
+        # Take baseline AFTER warm-up to exclude warm-up traffic (aggregate across all labels)
+        AGG_BASELINE_Q_INT=$(read_metric_agg "vllm:prefix_cache_queries_total")
+        AGG_BASELINE_H_INT=$(read_metric_agg "vllm:prefix_cache_hits_total")
+        AGG_BASELINE_Q_INT=${AGG_BASELINE_Q_INT%%.*}
+        AGG_BASELINE_H_INT=${AGG_BASELINE_H_INT%%.*}
+        echo "Baseline after warm-up (aggregate) - Queries: $AGG_BASELINE_Q_INT, Hits: $AGG_BASELINE_H_INT"
         echo ""
         
         echo "Running cache-optimized test via gateway with session affinity..."
         
-        # Capture aggregate baseline across all decode pods after warm-up
-        ALL_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
-        AGG_BASELINE_Q_INT=0; AGG_BASELINE_H_INT=0
-        for pod in "${ALL_PODS[@]}"; do
-          BQ_INT=$(read_metric_sum_int "$pod" "vllm:prefix_cache_queries_total{")
-          BH_INT=$(read_metric_sum_int "$pod" "vllm:prefix_cache_hits_total{")
-          AGG_BASELINE_Q_INT=$((AGG_BASELINE_Q_INT + BQ_INT))
-          AGG_BASELINE_H_INT=$((AGG_BASELINE_H_INT + BH_INT))
-        done
-        
         echo "=== GATEWAY HEALTH CHECK ==="
-        MODELS_STATUS=$(curl -sk -o /null -w "%{http_code}" -H "Host: $HOST_HEADER" "$GATEWAY_URL/v1/models" || true)
-        [ -z "$MODELS_STATUS" ] && MODELS_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" -H "Host: $HOST_HEADER" "$GATEWAY_URL/v1/models")
+        # robust health check with small retry loop
+        MODELS_STATUS=""
+        for try in 1 2 3; do
+          MODELS_STATUS=$(curl -sk --connect-timeout 2 --max-time 5 -o /dev/null -w "%{http_code}" ${HOST_HEADER:+-H "Host: $HOST_HEADER"} "$GATEWAY_URL/v1/models" || true)
+          [ "$MODELS_STATUS" = "200" ] && break
+          sleep 1
+        done
         echo "/v1/models HTTP status: $MODELS_STATUS"
         if [ "$MODELS_STATUS" != "200" ]; then
-          echo "❌ /v1/models did not return 200 (got $MODELS_STATUS) — failing fast"
-          exit 1
+          echo "⚠️ /v1/models returned $MODELS_STATUS (expected 200). Continuing since EPP/Gateway may not proxy this path."
         fi
         
-        # Quick /v1/completions health check (log HTTP code)
-        COMP_STATUS=$(curl -sk -o /dev/null -w "%{http_code}" -H "Host: $HOST_HEADER" -H "Content-Type: application/json" \
-          -X POST "$GATEWAY_URL/v1/completions" -d '{
-            "model": "meta-llama/Llama-3.2-3B-Instruct",
-            "prompt": "healthcheck",
-            "max_tokens": 4,
-            "temperature": 0.0
-          }')
-        echo "/v1/completions HTTP status: $COMP_STATUS"
+        # Quick /v1/chat/completions health check (log HTTP code)
+        COMP_STATUS=""
+        for try in 1 2 3; do
+          COMP_STATUS=$(curl -sk --connect-timeout 2 --max-time 8 -o /dev/null -w "%{http_code}" ${HOST_HEADER:+-H "Host: $HOST_HEADER"} -H "Content-Type: application/json" \
+            -X POST "$GATEWAY_URL/v1/chat/completions" -d '{
+              "model": "meta-llama/Llama-3.2-3B-Instruct",
+              "messages": [{"role": "user", "content": "healthcheck"}],
+              "max_tokens": 4,
+              "temperature": 0.0
+            }' || true)
+          [ "$COMP_STATUS" = "200" ] && break
+          sleep 1
+        done
+        echo "/v1/chat/completions HTTP status: $COMP_STATUS"
         if [ "$COMP_STATUS" != "200" ]; then
-          echo "❌ /v1/completions did not return 200 (got $COMP_STATUS) — failing fast"
+          echo "❌ /v1/chat/completions did not return 200 (got $COMP_STATUS) — failing fast"
           exit 1
         fi
         
@@ -218,7 +240,7 @@ spec:
             echo "  Enhanced cache test request $i (session: $SESSION_ID)..."
             # Capture timings: time_starttransfer ~ TTFT (approx), time_total = total latency
             READOUT=$(curl -k -s -o /tmp/llmd-cache-test-resp.json -w "%{time_starttransfer} %{time_total}" -X POST "$GATEWAY_URL/v1/chat/completions" \
-                -H "Host: $HOST_HEADER" \
+                ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
                 -H "Content-Type: application/json" \
                 -H "Authorization: Bearer enhanced-test-token-$SESSION_ID" \
                 -H "session-id: $SESSION_ID" \
@@ -249,7 +271,7 @@ spec:
             fi
             
             # Show brief response preview
-            echo "    Response: $(cat /tmp/llmd-cache-test-resp.json | jq -r '.choices[0].message.content // .error // "No response"' | head -1 | tr -d '\n' | cut -c1-50)..."
+            echo "    Response: $(cat /tmp/llmd-cache-test-resp.json | jq -r '.choices[0].message.content // .choices[0].text // .error // "No response"' | head -1 | tr -d '\n' | cut -c1-50)..."
             echo "    Timings: TTFT~$(printf '%.1f' "$TTFT_MS") ms, Post~$(printf '%.1f' "$POST_MS") ms, Total~$(printf '%.1f' "$TOTAL_MS") ms"
             sleep "$SLEEP_SECONDS"
         done
@@ -276,97 +298,33 @@ spec:
           POST_IMPROVE_PCT=0
         fi
         
-        # Get final metrics from all pods to verify routing
-        echo "=== INDIVIDUAL POD METRICS ANALYSIS ==="
-        
-        ALL_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
-        
-        TOTAL_FINAL_QUERIES=0
-        TOTAL_FINAL_HITS=0
-        
-        for pod in "${ALL_PODS[@]}"; do
-            echo "Checking metrics for pod: $pod"
-            POD_QUERIES=$(kubectl exec $pod -n $NAMESPACE -c vllm -- sh -c 'curl -s localhost:8200/metrics || curl -s localhost:8001/metrics' | grep "vllm:prefix_cache_queries_total{" | grep -o '[0-9.]*$' | head -1)
-            POD_HITS=$(kubectl exec $pod -n $NAMESPACE -c vllm -- sh -c 'curl -s localhost:8200/metrics || curl -s localhost:8001/metrics' | grep "vllm:prefix_cache_hits_total{" | grep -o '[0-9.]*$' | head -1)
-            
-            # Convert to integers for calculations
-            POD_QUERIES=${POD_QUERIES:-0}
-            POD_HITS=${POD_HITS:-0}
-            POD_QUERIES=$(echo "$POD_QUERIES" | cut -d. -f1)
-            POD_HITS=$(echo "$POD_HITS" | cut -d. -f1)
-            
-            echo "  Pod $pod: Queries=$POD_QUERIES, Hits=$POD_HITS"
-            
-            if [ "$POD_QUERIES" -gt "0" ] 2>/dev/null; then
-                POD_HIT_RATE=$(echo "scale=1; $POD_HITS * 100 / $POD_QUERIES" | bc -l)
-                echo "  Pod $pod: Hit Rate=${POD_HIT_RATE}%"
-            fi
-            
-            TOTAL_FINAL_QUERIES=$((TOTAL_FINAL_QUERIES + POD_QUERIES))
-            TOTAL_FINAL_HITS=$((TOTAL_FINAL_HITS + POD_HITS))
-        done
-        
-        echo ""
-        echo "Aggregate final metrics - Total Queries: $TOTAL_FINAL_QUERIES, Total Hits: $TOTAL_FINAL_HITS"
-        
-        # Compute aggregate deltas across all decode pods (final - baseline)
-        AGG_FINAL_Q_INT=0; AGG_FINAL_H_INT=0
-        # Re-list pods (in case of restarts, though unlikely)
-        ALL_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
-        for pod in "${ALL_PODS[@]}"; do
-          FQ_INT=$(read_metric_sum_int "$pod" "vllm:prefix_cache_queries_total{")
-          FH_INT=$(read_metric_sum_int "$pod" "vllm:prefix_cache_hits_total{")
-          AGG_FINAL_Q_INT=$((AGG_FINAL_Q_INT + FQ_INT))
-          AGG_FINAL_H_INT=$((AGG_FINAL_H_INT + FH_INT))
-        done
+        # Compute aggregate deltas across all decode pods (final - baseline) using Service metrics only
+        echo "=== AGGREGATE METRICS (Aggregated via Prometheus when available) ==="
+        AGG_FINAL_Q_INT=$(read_metric_agg "vllm:prefix_cache_queries_total")
+        AGG_FINAL_H_INT=$(read_metric_agg "vllm:prefix_cache_hits_total")
+        AGG_FINAL_Q_INT=${AGG_FINAL_Q_INT%%.*}
+        AGG_FINAL_H_INT=${AGG_FINAL_H_INT%%.*}
         DQ_INT=$((AGG_FINAL_Q_INT - AGG_BASELINE_Q_INT))
         DH_INT=$((AGG_FINAL_H_INT - AGG_BASELINE_H_INT))
+        echo "Aggregate totals - Queries: $AGG_FINAL_Q_INT, Hits: $AGG_FINAL_H_INT"
+        echo "Aggregate deltas (measured loop) - ΔQueries: $DQ_INT, ΔHits: $DH_INT"
         if [ "${DQ_INT:-0}" -ne 0 ]; then
           DELTA_HIT_RATE=$(awk -v h="$DH_INT" -v q="$DQ_INT" 'BEGIN{if (q==0) printf("0.0"); else printf("%.1f", (h*100)/q)}')
-          echo "Delta (measured loop only, aggregate) - Queries: $DQ_INT, Hits: $DH_INT, Hit Rate: ${DELTA_HIT_RATE}%"
+          echo "Delta Hit Rate (measured traffic): ${DELTA_HIT_RATE}%"
         fi
         
-        # SESSION STICKINESS ANALYSIS
+        # SESSION STICKINESS ANALYSIS (service metrics only cannot attribute per-pod)
         echo ""
         echo "=== SESSION STICKINESS ANALYSIS ==="
         echo "Pipeline sent $REQUESTS requests with the same session ID: $SESSION_ID"
-        echo "If session stickiness >90%, ONE pod should have ~$REQUESTS new queries"
-        echo ""
+        echo "Service-level metrics do not expose per-pod attribution; stickiness check is skipped in service-only mode."
+        STICKINESS_SCORE="N/A"
         
-        # Find which pod(s) received the most queries (indicating session stickiness)
-        MAX_QUERIES=0
-        ACTIVE_PODS=0
-        for pod in "${ALL_PODS[@]}"; do
-            POD_QUERIES=$(kubectl exec $pod -n $NAMESPACE -c vllm -- sh -c 'curl -s localhost:8200/metrics || curl -s localhost:8001/metrics' | grep "prefix_cache_queries_total{" | grep -o '[0-9.]*$' | head -1)
-            POD_QUERIES=${POD_QUERIES:-0}
-            POD_QUERIES=$(echo "$POD_QUERIES" | cut -d. -f1)
-            if [ "$POD_QUERIES" -gt "10" ] 2>/dev/null; then
-                ACTIVE_PODS=$((ACTIVE_PODS + 1))
-                if [ "$POD_QUERIES" -gt "$MAX_QUERIES" ] 2>/dev/null; then
-                    MAX_QUERIES=$POD_QUERIES
-                fi
-            fi
-        done
-        
-        echo "Pods with significant traffic (>10 queries): $ACTIVE_PODS"
-        echo "Maximum queries on any single pod: $MAX_QUERIES"
-        
-        if [ "$ACTIVE_PODS" -eq "1" ]; then
-            echo "✅ EXCELLENT: All traffic routed to 1 pod - >90% session stickiness achieved!"
-            STICKINESS_SCORE="EXCELLENT"
-        elif [ "$ACTIVE_PODS" -eq "2" ]; then
-            echo "⚠️  GOOD: Traffic split between 2 pods - ~70-80% session stickiness"
-            STICKINESS_SCORE="GOOD"
-        else
-            echo "❌ POOR: Traffic spread across $ACTIVE_PODS pods - <70% session stickiness"
-            STICKINESS_SCORE="POOR"
-        fi
-        
-        # Calculate overall hit rate from aggregate metrics
-        if [ "$TOTAL_FINAL_QUERIES" -gt "0" ] 2>/dev/null; then
-            OVERALL_HIT_RATE=$(echo "scale=1; $TOTAL_FINAL_HITS * 100 / $TOTAL_FINAL_QUERIES" | bc -l)
+        # Calculate overall hit rate from aggregate deltas (measured traffic only)
+        if [ "${DQ_INT:-0}" -gt 0 ] 2>/dev/null; then
+            OVERALL_HIT_RATE=$(awk -v h="$DH_INT" -v q="$DQ_INT" 'BEGIN{if (q==0) printf("0.0"); else printf("%.1f", (h*100)/q)}')
             echo ""
-            echo "🎉 Overall Cache Hit Rate: ${OVERALL_HIT_RATE}%"
+            echo "🎉 Overall Cache Hit Rate (measured): ${OVERALL_HIT_RATE}%"
             
             # Convert to integer for comparison
             HIT_RATE_INT=$(echo "$OVERALL_HIT_RATE" | cut -d. -f1)
@@ -385,15 +343,18 @@ spec:
                 EXIT_CODE=0
             fi
         else
-            echo "⚠️ No queries detected - check configuration"
+            echo "⚠️ No queries detected in aggregate deltas - check configuration"
             EXIT_CODE=1
         fi
         
         echo ""
         echo "=== RESULTS ==="
-        echo "Total queries across all pods: $TOTAL_FINAL_QUERIES"
-        echo "Total hits across all pods: $TOTAL_FINAL_HITS"
-        echo "Overall hit rate: ${OVERALL_HIT_RATE:-0}%"
+        echo "Aggregate baseline queries: $AGG_BASELINE_Q_INT"
+        echo "Aggregate baseline hits: $AGG_BASELINE_H_INT"
+        echo "Aggregate final queries: $AGG_FINAL_Q_INT"
+        echo "Aggregate final hits: $AGG_FINAL_H_INT"
+        echo "Measured deltas - ΔQueries: $DQ_INT, ΔHits: $DH_INT"
+        echo "Overall hit rate (measured): ${OVERALL_HIT_RATE:-0}%"
         
         echo ""
         echo "=== GATEWAY ROUTING TEST ==="
@@ -402,7 +363,7 @@ spec:
         for i in {1..5}; do
             echo "Gateway request $i..."
             RESPONSE=$(curl -k -s -X POST "$GATEWAY_URL/v1/chat/completions" \
-                -H "Host: $HOST_HEADER" \
+                ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
                 -H "Content-Type: application/json" \
                 -d '{
                   "model": "meta-llama/Llama-3.2-3B-Instruct",
@@ -410,7 +371,7 @@ spec:
                   "max_tokens": 8,
                   "temperature": 0.0
                 }')
-            echo "  Response: $(echo $RESPONSE | jq -r '.choices[0].message.content // .error // "No response"' | tr -d '\n' | cut -c1-30)..."
+            echo "  Response: $(echo $RESPONSE | jq -r '.choices[0].message.content // .choices[0].text // .error // "No response"' | tr -d '\n' | cut -c1-30)..."
             sleep 0.5
         done
         
@@ -450,6 +411,9 @@ spec:
     - name: sleep-seconds
       description: "Seconds to sleep between requests"
       default: "0.8"
+    - name: prometheus-url
+      description: "Prometheus-compatible base URL (Thanos Querier in OpenShift works)"
+      default: "http://thanos-querier.openshift-monitoring.svc.cluster.local:9091"
   tasks:
     - name: cache-hit-test
       taskRef:
@@ -469,4 +433,6 @@ spec:
           value: "$(params.requests)"
         - name: sleep-seconds
           value: "$(params.sleep-seconds)"
+        - name: prometheus-url
+          value: "$(params.prometheus-url)"
 

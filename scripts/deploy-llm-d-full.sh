@@ -57,10 +57,9 @@ print_status "Deploying HTTPRoute (fixed routing to backend service)"
 kubectl apply -f assets/llm-d/httproute.yaml
 
 print_status "Deploying EPP External Processor EnvoyFilter (critical for KV-cache routing)"
-kubectl apply -f assets/epp-external-processor.yaml
+kubectl apply -f assets/envoyfilter-epp.yaml
 
-print_status "Deploying network policy"
-kubectl apply -f assets/networkpolicy.yaml
+# NetworkPolicy is optional for this demo; skipping by default
 
 # Wait for deployments to be ready
 print_status "Waiting for EPP deployment to be ready..."
@@ -96,28 +95,23 @@ kubectl get envoyfilter -n $NAMESPACE
 
 # Test the system
 echo -e "\n${BLUE}🧪 Testing KV-Cache-Aware Routing System:${NC}"
-GATEWAY_URL=$(kubectl get httproute llama-3-2-1b-http-route -n $NAMESPACE -o jsonpath='{.spec.hostnames[0]}')
+HOST_HEADER=${HOST_HEADER:-llm-d.demo.local}
+INTERNAL_URL="http://llm-d-gateway-istio.$NAMESPACE.svc.cluster.local"
 
-if [ -n "$GATEWAY_URL" ]; then
-    echo "Testing inference endpoint: https://$GATEWAY_URL/v1/completions"
-    
-    TEST_RESPONSE=$(curl -k -s --max-time 30 -X POST "https://$GATEWAY_URL/v1/completions" \
-        -H "Content-Type: application/json" \
-        -d '{
-            "model": "meta-llama/Llama-3.2-1B",
-            "prompt": "Hello",
-            "max_tokens": 5
-        }' 2>/dev/null)
-    
-    if echo "$TEST_RESPONSE" | grep -q '"choices"'; then
-        print_status "✅ Inference endpoint is working!"
-        echo "Response: $(echo "$TEST_RESPONSE" | jq -r '.choices[0].text' 2>/dev/null || echo "Response received")"
-    else
-        print_warning "Inference endpoint test inconclusive. System may still be starting up."
-        echo "Raw response: $TEST_RESPONSE"
-    fi
+echo "Testing inference endpoint via in-cluster gateway with Host header..."
+TEST_RESPONSE=$(curl -s -k --max-time 30 -H "Host: $HOST_HEADER" -H "Content-Type: application/json" \
+  -X POST "$INTERNAL_URL/v1/completions" -d '{
+    "model": "meta-llama/Llama-3.2-3B-Instruct",
+    "prompt": "Hello",
+    "max_tokens": 5,
+    "temperature": 0.0
+  }' 2> /dev/null)
+if echo "$TEST_RESPONSE" | grep -q '"choices"'; then
+  print_status "✅ Inference endpoint is working!"
+  echo "Response: $(echo "$TEST_RESPONSE" | jq -r '.choices[0].text // .choices[0].message.content' 2> /dev/null | head -1)"
 else
-    print_warning "Could not determine gateway URL for testing"
+  print_warning "Inference endpoint test inconclusive. System may still be starting up."
+  echo "Raw response: $TEST_RESPONSE"
 fi
 
 # Instructions for accessing the application
@@ -136,13 +130,14 @@ echo "✅ External processing with intelligent scoring"
 
 if [ -n "$GATEWAY_URL" ]; then
     echo -e "\n${BLUE}API endpoint:${NC}"
-    echo "https://$GATEWAY_URL/v1/completions"
+echo "http://llm-d-gateway-istio.$NAMESPACE.svc.cluster.local/v1/completions (use Host header: llm-d.demo.local)"
     
     echo -e "\n${BLUE}Test the cache-aware routing:${NC}"
-    echo "curl -k -X POST \"https://$GATEWAY_URL/v1/completions\" \\"
-    echo "  -H \"Content-Type: application/json\" \\"
-    echo "  -H \"X-Session-ID: test-session\" \\"
-    echo "  -d '{\"model\": \"meta-llama/Llama-3.2-1B\", \"prompt\": \"Hello\", \"max_tokens\": 10}'"
+    echo "curl -k -X POST \"http://llm-d-gateway-istio.$NAMESPACE.svc.cluster.local/v1/completions\" \\
+  -H \"Host: llm-d.demo.local\" \\
+  -H \"Content-Type: application/json\" \\
+  -H \"X-Session-ID: test-session\" \\
+  -d '{\"model\": \"meta-llama/Llama-3.2-3B-Instruct\", \"prompt\": \"Hello\", \"max_tokens\": 10}'"
 fi
 
 echo -e "\n${BLUE}To view logs:${NC}"
