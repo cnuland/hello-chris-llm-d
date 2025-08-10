@@ -3,10 +3,15 @@
 # LLM-D Cache-Aware Routing Demo Script
 # This script demonstrates how LLM-D routes requests based on KV-cache location
 
-GATEWAY_URL="https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com"
+GATEWAY_URL=${GATEWAY_URL:-"http://llm-d-gateway-istio.llm-d.svc.cluster.local"}
+HOST=${HOST:-"llm-d.demo.local"}
+MODEL="meta-llama/Llama-3.2-3B-Instruct"
 
 echo "🚀 LLM-D Cache-Aware Routing Demo"
 echo "=================================="
+echo "Gateway: $GATEWAY_URL"
+echo "Host:    $HOST"
+echo "Model:   $MODEL"
 echo ""
 
 # Define common prompt prefixes that should create cache hits
@@ -19,33 +24,36 @@ echo "--------------------------------------------------------------"
 
 # Send initial requests to populate cache on different pods
 echo "🎯 Request 1: Building cache with AI prompt..."
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-demo-1" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_1 society and the economy\"}],
     \"max_tokens\": 50
   }" | jq -r '.choices[0].message.content' | head -2
 
 echo ""
 echo "🎯 Request 2: Building cache with ML prompt..."
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-demo-2" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_2 deep learning and neural networks\"}],
     \"max_tokens\": 50
   }" | jq -r '.choices[0].message.content' | head -2
 
 echo ""
 echo "🎯 Request 3: Building cache with Cloud prompt..."
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-demo-3" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_3 advantages for modern businesses\"}],
     \"max_tokens\": 50
   }" | jq -r '.choices[0].message.content' | head -2
@@ -61,11 +69,12 @@ echo "--------------------------------------------------------------------------
 # These requests should hit cache and be routed to the pods with relevant cache
 echo "🎯 Cache Hit Test 1: AI topic (should route to pod with AI cache)..."
 TIME1=$(date +%s%N)
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-hit-1" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_1 healthcare and education\"}],
     \"max_tokens\": 30
   }" | jq -r '.choices[0].message.content' | head -1
@@ -76,11 +85,12 @@ echo "⚡ Latency: ${LATENCY1}ms"
 echo ""
 echo "🎯 Cache Hit Test 2: ML topic (should route to pod with ML cache)..."
 TIME2=$(date +%s%N)
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-hit-2" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_2 computer vision applications\"}],
     \"max_tokens\": 30
   }" | jq -r '.choices[0].message.content' | head -1
@@ -91,11 +101,12 @@ echo "⚡ Latency: ${LATENCY2}ms"
 echo ""
 echo "🎯 Cache Hit Test 3: Cloud topic (should route to pod with Cloud cache)..."
 TIME3=$(date +%s%N)
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-hit-3" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT_3 scalability and cost efficiency\"}],
     \"max_tokens\": 30
   }" | jq -r '.choices[0].message.content' | head -1
@@ -108,11 +119,12 @@ echo "🆚 Step 3: Cache Miss Test - New topic should route differently"
 echo "---------------------------------------------------------------"
 
 TIME4=$(date +%s%N)
-curl -s -X POST "$GATEWAY_URL/v1/chat/completions" \
+curl -sk -X POST "$GATEWAY_URL/v1/chat/completions" \
+  -H "Host: $HOST" \
   -H "Content-Type: application/json" \
   -H "X-Request-ID: cache-miss-1" \
   -d "{
-    \"model\": \"llama-3-2-1b\",
+    \"model\": \"$MODEL\",
     \"messages\": [{\"role\": \"user\", \"content\": \"Describe the history of space exploration and its milestones\"}],
     \"max_tokens\": 30
   }" | jq -r '.choices[0].message.content' | head -1
@@ -132,10 +144,10 @@ echo "  Space Topic: ${LATENCY4}ms"
 
 echo ""
 echo "🔍 To observe cache-aware routing in action:"
-echo "1. Check EPP logs: oc logs -n llm-d deployment/llama-3-2-1b-epp -f"
+echo "1. Check EPP logs: oc logs -n llm-d deployment/ms-llm-d-modelservice-epp -f"
 echo "2. Monitor Grafana cache hit rate dashboard"
 echo "3. Check vLLM metrics on each decode pod"
-echo "4. Look for 'cache_hit' vs 'cache_miss' in pod logs"
+echo "4. Look for 'prefix_cache' metrics increases on decode pods"
 
 echo ""
-echo "✅ Demo completed! The lower latencies for similar prompts indicate successful cache hits."
+echo "✅ Demo completed! Lower latencies for similar prompts indicate successful cache hits."

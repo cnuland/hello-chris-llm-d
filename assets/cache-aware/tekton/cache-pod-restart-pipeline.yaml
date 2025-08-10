@@ -12,43 +12,63 @@ spec:
       image: bitnami/kubectl:latest
       script: |
         #!/bin/bash
-        set -e
+        set -euo pipefail
         
+        NS="$(params.namespace)"
         echo "🔄 CACHE-AWARE ROUTING: Pod Restart Pipeline"
         echo "============================================"
+        echo "Namespace: $NS"
         echo ""
         
         echo "=== Restarting Decode Pods for Fresh Metrics ==="
         
-        # Show current pods before restart
         echo "Current decode pods before restart:"
-        kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' -o wide
+        kubectl get pods -n "$NS" -l 'llm-d.ai/role=decode' -o wide || true
         echo ""
         
-        # Restart decode deployment to get fresh pods with clean metrics
-        echo "Restarting decode deployment..."
-        kubectl rollout restart deployment -l llm-d.ai/role=decode -n $(params.namespace)
+        restarted=0
+        
+        # Try rollout restart for Deployments with the decode label
+        DEPLOY_COUNT=$(kubectl get deploy -n "$NS" -l 'llm-d.ai/role=decode' --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${DEPLOY_COUNT:-0}" -gt 0 ]; then
+          echo "Restarting decode deployments ($DEPLOY_COUNT found)..."
+          kubectl rollout restart deployment -n "$NS" -l llm-d.ai/role=decode
+          kubectl rollout status deployment -n "$NS" -l llm-d.ai/role=decode --timeout=600s
+          restarted=1
+        fi
+        
+        # Try rollout restart for StatefulSets with the decode label
+        STS_COUNT=$(kubectl get statefulset -n "$NS" -l 'llm-d.ai/role=decode' --no-headers 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${STS_COUNT:-0}" -gt 0 ]; then
+          echo "Restarting decode statefulsets ($STS_COUNT found)..."
+          kubectl rollout restart statefulset -n "$NS" -l llm-d.ai/role=decode
+          kubectl rollout status statefulset -n "$NS" -l llm-d.ai/role=decode --timeout=600s
+          restarted=1
+        fi
+        
+        # If no controllers matched, delete pods directly
+        if [ "$restarted" -eq 0 ]; then
+          echo "No decode deployments/statefulsets found. Deleting decode pods directly..."
+          PODS_BEFORE=$(kubectl get pods -n "$NS" -l 'llm-d.ai/role=decode' -o name || true)
+          if [ -n "$PODS_BEFORE" ]; then
+            kubectl delete -n "$NS" $PODS_BEFORE --wait=true
+          else
+            echo "No decode pods found to delete."
+          fi
+        fi
         
         echo ""
-        echo "✅ Deployment restart initiated!"
-        echo ""
-        echo "⏳ Waiting for rollout to complete (this may take 5-10 minutes)..."
-        echo "   - Pods need to download large models (~1-2GB each)"
-        echo "   - vLLM containers need to initialize with optimized cache config"
-        echo ""
+        echo "⏳ Waiting for new decode pods to become Ready..."
+        # Wait for any decode pod to become Ready
+        kubectl wait --for=condition=Ready pod -n "$NS" -l llm-d.ai/role=decode --timeout=900s
         
-        # Wait for rollout to complete with extended timeout
-        kubectl rollout status deployment -l llm-d.ai/role=decode -n $(params.namespace) --timeout=600s
-        
-        # Wait additional time for pods to be fully ready and models loaded
         echo ""
-        echo "⏳ Waiting for pods to be fully ready and models loaded (60s)..."
+        echo "⏳ Waiting additional 60s for model load..."
         sleep 60
         
-        # Verify new pods are running and ready
         echo ""
         echo "=== Fresh Decode Pods After Restart ==="
-        DECODE_PODS=($(kubectl get pods -n $(params.namespace) -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
+        DECODE_PODS=($(kubectl get pods -n "$NS" -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
         
         if [ ${#DECODE_PODS[@]} -eq 0 ]; then
             echo "❌ No running decode pods found after restart!"
@@ -57,8 +77,8 @@ spec:
         
         echo "Found ${#DECODE_PODS[@]} fresh decode pods:"
         for pod in "${DECODE_PODS[@]}"; do
-            AGE=$(kubectl get pod $pod -n $(params.namespace) -o jsonpath='{.status.startTime}')
-            READY_STATUS=$(kubectl get pod $pod -n $(params.namespace) -o jsonpath='{.status.containerStatuses[?(@.name=="vllm")].ready}')
+            AGE=$(kubectl get pod "$pod" -n "$NS" -o jsonpath='{.status.startTime}')
+            READY_STATUS=$(kubectl get pod "$pod" -n "$NS" -o jsonpath='{.status.containerStatuses[?(@.name=="vllm")].ready}')
             echo "  📦 $pod"
             echo "     Started: $AGE"
             echo "     vLLM Ready: $READY_STATUS"
@@ -68,8 +88,8 @@ spec:
         echo "🎉 Pod restart complete - fresh pods with clean metrics ready!"
         echo ""
         echo "Next steps:"
-        echo "1. Wait 2-3 minutes for models to fully load"
-        echo "2. Run the cache test pipeline: cache-hit-test-pipeline"
+        echo "1. Wait 2-3 minutes for models to fully load (if needed)"
+        echo "2. Run the cache test pipeline: cache-hit-pipeline"
         echo ""
 
 ---

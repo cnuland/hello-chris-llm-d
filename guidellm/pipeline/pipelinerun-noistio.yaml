@@ -1,0 +1,22 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: cache-hit-run-noistio-
+  namespace: llm-d
+spec:
+  pipelineRef:
+    name: cache-hit-pipeline
+  params:
+    - name: namespace
+      value: "llm-d"
+    - name: gateway-url
+      value: "https://llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com"
+  workspaces: []
+  taskRunTemplate:
+    serviceAccountName: pipeline
+    podTemplate:
+      annotations:
+        sidecar.istio.io/inject: "false"
+  timeouts:
+    pipeline: "30m0s"
+

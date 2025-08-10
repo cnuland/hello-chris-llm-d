@@ -1,0 +1,11 @@
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  generateName: cache-pod-restart-run-
+spec:
+  pipelineRef:
+    name: cache-pod-restart-pipeline
+  params:
+    - name: namespace
+      value: llm-d
+

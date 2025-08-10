@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
-  generateName: cache-hit-run-
+  generateName: cache-ramp-run-
 spec:
   pipelineRef:
     name: cache-hit-pipeline
@@ -12,3 +12,10 @@ spec:
       value: "http://llm-d-gateway-istio.llm-d.svc.cluster.local"
     - name: host
       value: "llm-d.demo.local"
+    - name: warmup-count
+      value: "1"
+    - name: requests
+      value: "80"
+    - name: sleep-seconds
+      value: "0.3"
+
