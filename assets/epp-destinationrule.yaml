@@ -1,0 +1,20 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: epp-ext-proc-plaintext
+  namespace: llm-d
+spec:
+  host: ms-llm-d-modelservice-epp.llm-d.svc.cluster.local
+  trafficPolicy:
+    tls:
+      mode: DISABLE
+    connectionPool:
+      http:
+        h2UpgradePolicy: UPGRADE
+        http2MaxRequests: 1000
+  portLevelSettings:
+  - port:
+      number: 9002
+    tls:
+      mode: DISABLE
+

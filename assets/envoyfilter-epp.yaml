@@ -19,6 +19,9 @@ spec:
         connect_timeout: 2s
         lb_policy: ROUND_ROBIN
         http2_protocol_options: {}
+        upstream_http_protocol_options:
+          auto_sni: false
+          auto_san_validation: false
         load_assignment:
           cluster_name: epp-ext-proc-cluster
           endpoints:
@@ -35,10 +38,8 @@ spec:
         filterChain:
           filter:
             name: envoy.filters.network.http_connection_manager
-            subFilter:
-              name: envoy.filters.http.router
     patch:
-      operation: INSERT_BEFORE
+      operation: INSERT_FIRST
       value:
         name: envoy.filters.http.ext_proc
         typed_config:
@@ -46,12 +47,12 @@ spec:
           grpc_service:
             envoy_grpc:
               cluster_name: epp-ext-proc-cluster
-            timeout: 15s
-          message_timeout: 15s
+            timeout: 30s
+          message_timeout: 30s
           failure_mode_allow: true
           processing_mode:
             request_header_mode: SEND
-            request_body_mode: BUFFERED
+            request_body_mode: STREAMED
             response_header_mode: SEND
-            response_body_mode: BUFFERED
+            response_body_mode: STREAMED
 

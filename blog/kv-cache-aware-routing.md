@@ -70,6 +70,14 @@ This guide uses the latest llm-d v0.2.x components for optimal KV-cache-aware ro
 - **Cache Hit Rate**: **87.4%** (production-validated)
 - **Session Stickiness**: **99.91%** (near-perfect routing)
 
+## Demo configuration at a glance
+
+- Gateway: llm-d-gateway-istio.llm-d.svc.cluster.local, host llm-d.demo.local
+- Stickiness: EPP-driven via Envoy ext-proc on the gateway (failure_mode_allow=true)
+- Mesh fallback: ROUND_ROBIN (no mesh-level consistentHash configured)
+- Model: meta-llama/Llama-3.2-3B-Instruct
+- Decode replicas: 3 (prefill optional for this demo)
+
 ## Prerequisites
 
 To follow this guide, you should have:
@@ -88,6 +96,8 @@ To follow this guide, you should have:
 - Operator-driven (alternative): The Operator can manage EPP and HTTPRoute from ModelService.spec.routing (epp.create/httpRoute.create). If you use this, you do not need to create pools manually.
 
 ### (1) ModelService: The Central Resource (3B Instruct)
+
+Note: The running 0.2.0 demo uses decode-only; prefill is optional and shown here for completeness.
 
 ```yaml
 apiVersion: llm-d.ai/v1alpha1
@@ -223,13 +233,13 @@ spec:
 
 ### (2) HTTPRoute: Gateway Integration (OpenShift)
 
-If you expose the Istio Inference Gateway via an OpenShift Route, ensure the HTTPRoute hostnames match the external Route host you create. Replace the hostname below with your actual route host.
+If you expose the Istio Inference Gateway externally, ensure the HTTPRoute hostnames match your external Route/Ingress host. For in-cluster testing, use the Host header llm-d.demo.local.
 
 ```yaml
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: llama-3-2-3b-instruct-route
+  name: ms-llm-d-modelservice
   namespace: llm-d
 spec:
   parentRefs:
@@ -237,7 +247,7 @@ spec:
     kind: Gateway
     name: llm-d-gateway
   hostnames:
-  - "llm-d-inference-gateway-llm-d.apps.<your-cluster-domain>"
+  - "llm-d.demo.local"
   rules:
   - matches:
     - path:
@@ -246,7 +256,7 @@ spec:
     backendRefs:
     - group: ""
       kind: Service
-      name: llama-3-2-3b-instruct-service
+      name: ms-llm-d-modelservice-decode
       port: 8000
 ```
 
@@ -258,10 +268,36 @@ spec:
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
 metadata:
-  name: epp-external-processor
+  name: epp-ext-proc
   namespace: llm-d
 spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: llm-d-gateway
   configPatches:
+  - applyTo: CLUSTER
+    match:
+      context: GATEWAY
+    patch:
+      operation: ADD
+      value:
+        name: epp-ext-proc-cluster
+        type: STRICT_DNS
+        connect_timeout: 2s
+        lb_policy: ROUND_ROBIN
+        http2_protocol_options: {}
+        upstream_http_protocol_options:
+          auto_sni: false
+          auto_san_validation: false
+        load_assignment:
+          cluster_name: epp-ext-proc-cluster
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  socket_address:
+                    address: ms-llm-d-modelservice-epp.llm-d.svc.cluster.local
+                    port_value: 9002
   - applyTo: HTTP_FILTER
     match:
       context: GATEWAY
@@ -269,23 +305,23 @@ spec:
         filterChain:
           filter:
             name: envoy.filters.network.http_connection_manager
-            subFilter:
-              name: envoy.filters.http.router
     patch:
-      operation: INSERT_BEFORE
+      operation: INSERT_FIRST
       value:
         name: envoy.filters.http.ext_proc
         typed_config:
           '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+          failure_mode_allow: true
           grpc_service:
             envoy_grpc:
-              cluster_name: outbound|9002||llama-3-2-3b-instruct-epp-service.llm-d.svc.cluster.local
+              cluster_name: epp-ext-proc-cluster
+            timeout: 30s
+          message_timeout: 30s
           processing_mode:
             request_header_mode: SEND
-            response_header_mode: SKIP
-  workloadSelector:
-    labels:
-      istio: ingressgateway
+            response_header_mode: SEND
+            request_body_mode: STREAMED
+            response_body_mode: STREAMED
 ```
 
 ---
@@ -617,8 +653,8 @@ The **87.4% cache hit rate achieving 85% TTFT improvement** represents a product
 ## OpenShift-specific Notes
 
 ### Gateway exposure and hostnames
-- Expose the Istio Inference Gateway via a passthrough Route.
-- Ensure your HTTPRoute hostnames include the external Route host. Use the Host header in curl to match the HTTPRoute.
+- You can expose the Istio Inference Gateway via an OpenShift Route.
+- Ensure your HTTPRoute hostnames include the external Route/Ingress host. For in-cluster tests, use Host: llm-d.demo.local.
 
 ### SCC and sidecar injection
 - If images require non-root or additional capabilities, grant anyuid/privileged SCC to the service accounts as needed, or use compliant images.

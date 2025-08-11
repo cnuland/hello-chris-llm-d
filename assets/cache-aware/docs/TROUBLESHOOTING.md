@@ -13,9 +13,10 @@
 ### Session Stickiness Problems
 - **Problem**: Requests are not targeting the same pod consistently.
 - **Solution**:
-  - Verify `ClientIP` session affinity is set where applicable.
-  - Ensure client IPs are persistently routed (or provide stable session headers).
-  - Confirm HTTPRoute routes /v1 to the EPP service and that the Host header matches.
+  - Verify the EPP pod is Running and healthy; check logs for routing decisions.
+  - Confirm the Envoy ext-proc EnvoyFilter is attached to the gateway and pointing at the EPP service.
+  - Ensure requests include the Host header expected by the HTTPRoute.
+  - Optional: add a mesh consistentHash DestinationRule on x-session-id for sticky fallback when EPP is unavailable.
 
 ### Request Latency Issues
 - **Problem**: Increased latency for cached or uncached requests.

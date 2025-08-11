@@ -33,7 +33,7 @@ This directory contains a Tekton Pipeline for automated testing of the LLM-D KV-
 ### Quick Start
 ```bash
 # Deploy the Task/Pipeline and run the Task
-dcd tekton/
+cd tekton/
 ./run-cache-test.sh
 ```
 

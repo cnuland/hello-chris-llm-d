@@ -2,6 +2,7 @@ apiVersion: tekton.dev/v1beta1
 kind: Task
 metadata:
   name: cache-hit-test
+  namespace: llm-d
 spec:
   params:
     - name: namespace
@@ -28,6 +29,9 @@ spec:
     - name: prometheus-url
       description: "Optional Prometheus base URL (e.g., http://prometheus-user-workload.openshift-user-workload-monitoring.svc.cluster.local:9091)"
       default: ""
+  results:
+    - name: session-id
+      description: "Session ID used for the measured requests"
   steps:
 
     - name: verify-system
@@ -93,6 +97,10 @@ spec:
         SERVICE_METRICS_URL="http://ms-llm-d-modelservice-decode.${NAMESPACE}.svc.cluster.local:8000/metrics"
         PROM_URL="$(params.prometheus-url)"
         
+        # Generate per-run Test ID for log filtering
+        TEST_ID="multi-$(date +%s)"
+        echo "Test-ID: ${TEST_ID}"
+        
         # Get current decode pods 
         DECODE_PODS=($(kubectl get pods -n $NAMESPACE -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
         
@@ -127,6 +135,7 @@ spec:
               ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
               -H "Content-Type: application/json" \
               -H "User-Agent: CacheWarmup/1.0" \
+              -H "x-test-id: $TEST_ID" \
               -H "session-id: $SESSION_ID_WARMUP" \
               -H "x-session-id: $SESSION_ID_WARMUP" \
               -d "{\"model\": \"meta-llama/Llama-3.2-3B-Instruct\", \"messages\": [{\"role\": \"user\", \"content\": \"$PROMPT\"}], \"max_tokens\": 16, \"temperature\": 0.0, \"top_p\": 1.0, \"seed\": 12345}" > /dev/null || true
@@ -226,6 +235,8 @@ spec:
         
         echo "Testing enhanced cache-aware routing with session-aware scoring..."
         echo "Session ID: $SESSION_ID"
+        # Publish the session ID as a Tekton task result for downstream tasks
+        echo -n "$SESSION_ID" > "$(results.session-id.path)"
         
         # Accumulators for latency metrics
         SUM_TTFT_MS=0
@@ -243,6 +254,7 @@ spec:
                 ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
                 -H "Content-Type: application/json" \
                 -H "Authorization: Bearer enhanced-test-token-$SESSION_ID" \
+                -H "x-test-id: $TEST_ID" \
                 -H "session-id: $SESSION_ID" \
                 -H "x-session-id: $SESSION_ID" \
                 -H "User-Agent: EnhancedCacheTest/1.0" \
@@ -365,6 +377,7 @@ spec:
             RESPONSE=$(curl -k -s -X POST "$GATEWAY_URL/v1/chat/completions" \
                 ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
                 -H "Content-Type: application/json" \
+                -H "x-test-id: $TEST_ID" \
                 -d '{
                   "model": "meta-llama/Llama-3.2-3B-Instruct",
                   "messages": [{"role": "user", "content": "What makes Paris a unique city?"}],
@@ -374,6 +387,57 @@ spec:
             echo "  Response: $(echo $RESPONSE | jq -r '.choices[0].message.content // .choices[0].text // .error // "No response"' | tr -d '\n' | cut -c1-30)..."
             sleep 0.5
         done
+        
+        echo ""
+        echo "=== MULTI-SESSION STICKINESS SUMMARY (current Test-ID and Session-ID) ==="
+        # Discover gateway pods (try multiple selectors for robustness)
+        GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l istio=ingressgateway -o name 2>/dev/null || true)
+        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l app=istio-proxy -o name 2>/dev/null || true); fi
+        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l app=llm-d-gateway-istio -o name 2>/dev/null || true); fi
+        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l 'gateway.networking.k8s.io/gateway-name=llm-d-gateway' -o name 2>/dev/null || true); fi
+        
+        # Collect last 60m logs from gateway into a temp file
+        TMP_LOG=$(mktemp)
+        for p in $GW_PODS; do
+          kubectl logs -n "$NAMESPACE" ${p#pod/} --since=60m --tail=20000 || true
+        done > "$TMP_LOG"
+        
+        # Extract only entries for this run's TEST_ID and SESSION_ID
+        # Output lines: "SID\tUPSTREAM"
+        TMP_PAIRS=$(mktemp)
+        cat "$TMP_LOG" | jq -rc "select((.x_test_id // .x-test-id // .request_headers.\"x-test-id\") == \"$TEST_ID\")
+          | select((.x_session_id // .x-session-id // .request_headers.\"x-session-id\" // .session_id // .request_headers.\"session-id\") == \"$SESSION_ID\")
+          | [(.x_session_id // .x-session-id // .request_headers.\"x-session-id\" // .session_id // .request_headers.\"session-id\" // \"unknown\"),
+             (.upstream_host // .x_upstream_host // .response_headers.\"x-upstream-host\" // \"unknown\")] | @tsv" 2>/dev/null > "$TMP_PAIRS" || true
+        
+        # Count upstream occurrences for this single session
+        TOTAL=0
+        declare -A COUNTS
+        while IFS=$'\t' read -r SID UP; do
+          [ -z "$UP" ] && continue
+          COUNTS[$UP]=$(( ${COUNTS[$UP]:-0} + 1 ))
+          TOTAL=$((TOTAL + 1))
+        done < "$TMP_PAIRS"
+        
+        # Determine top upstream and stickiness percentage
+        TOPUP="unknown"
+        TOPCNT=0
+        for UP in "${!COUNTS[@]}"; do
+          c=${COUNTS[$UP]}
+          if [ "$c" -gt "$TOPCNT" ]; then
+            TOPCNT=$c
+            TOPUP=$UP
+          fi
+        done
+        if [ "${TOTAL:-0}" -gt 0 ]; then
+          STICKINESS_PCT=$(awk -v t="$TOPCNT" -v n="$TOTAL" 'BEGIN{if(n==0) printf("0.0"); else printf("%.1f", (t*100.0)/n)}')
+        else
+          STICKINESS_PCT="0.0"
+        fi
+        
+        # Print a clean, single-line summary; escape literal percent in printf format
+        printf "Session %s\tTopUpstream %s\tTopCount %d\tTotal %d\tStickiness %% %s\n" \
+          "$SESSION_ID" "$TOPUP" "$TOPCNT" "${TOTAL:-0}" "$STICKINESS_PCT"
         
         echo ""
         echo "=== CACHE-AWARE ROUTING STATUS ==="
@@ -388,6 +452,7 @@ apiVersion: tekton.dev/v1beta1
 kind: Pipeline
 metadata:
   name: cache-hit-pipeline
+  namespace: llm-d
 spec:
   params:
     - name: namespace

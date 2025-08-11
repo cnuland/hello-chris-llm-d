@@ -1,5 +1,10 @@
 # LLM-D Architecture Deployment Assets
 
+> Current demo state (v0.2.0)
+> - Model: meta-llama/Llama-3.2-3B-Instruct
+> - Stickiness: EPP-driven via Envoy ext-proc on llm-d-gateway (failure_mode_allow=true); mesh fallback is ROUND_ROBIN
+> - Gateway: http://llm-d-gateway-istio.llm-d.svc.cluster.local with Host: llm-d.demo.local
+
 This directory contains assets for deploying a complete **LLM-D (Large Language Model Disaggregation)** architecture. For comprehensive architecture details and demo scenarios, see the [main README](../README.md).
 
 ## 🎯 What's Included
@@ -14,19 +19,14 @@ This directory contains assets for deploying a complete **LLM-D (Large Language 
   - ✅ Load-aware and prefix-aware scoring
   - ✅ Routes requests to appropriate prefill or decode pods
 
-### 2. **Prefill Pods**
-- **Purpose**: Handle prompt processing phase
-- **Features**:
-  - ✅ Proper vLLM prefix caching (`--enable-prefix-caching`)
-  - ✅ NIXL KV transfer for sharing cache with decode pods
-  - ✅ GPU scheduling and resource management
-
-### 3. **Decode Pods**
+### 2. **Decode Pods**
 - **Purpose**: Handle token generation phase
 - **Features**:
   - ✅ Proper vLLM prefix caching (`--enable-prefix-caching`)
-  - ✅ NIXL KV transfer for receiving cache from prefill pods
   - ✅ GPU scheduling and resource management
+
+### 3. (Optional) Prefill Pods
+- Not required for this 0.2.0 demo flow. If enabled in your environment, ensure KV transfer compatibility accordingly.
 
 ## 🔧 Key Improvements
 
@@ -38,9 +38,8 @@ This directory contains assets for deploying a complete **LLM-D (Large Language 
 - **Before**: `PD_ENABLED=false` (monolithic mode)
 - **After**: `PD_ENABLED=true` with proper threshold configuration
 
-### NIXL KV Transfer
-- **Purpose**: Enables cache sharing between prefill and decode pods
-- **Configuration**: Both pods listen on port 5557 for KV transfer
+### KV Eventing (optional)
+- If you enable cross-pod KV transfer or external indexers, ensure consistent hashing configuration and ports across components.
 
 ## 📁 Directory Structure
 
@@ -67,10 +66,14 @@ kubectl -n llm-d create secret generic llm-d-hf-token \
   --from-literal=HF_TOKEN={{HF_TOKEN}} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-Apply all LLM-D gateway, EPP, and decode components at once with Kustomize:
+Apply the gateway, EPP, and decode components:
 
 ```
-kubectl apply -k assets/llm-d
+kubectl apply -n llm-d -f assets/llm-d/gateway.yaml
+kubectl apply -n llm-d -f assets/llm-d/httproute.yaml
+kubectl apply -n llm-d -f assets/llm-d/decode-service.yaml
+kubectl apply -n llm-d -f assets/llm-d/decode-deployment.yaml
+kubectl apply -n llm-d -f assets/llm-d/epp.yaml
 kubectl -n llm-d rollout status deploy/ms-llm-d-modelservice-decode
 ```
 
@@ -102,11 +105,9 @@ kubectl apply -f assets/load-testing/prefix-cache-test-job.yaml
 
 ### Check Metrics
 ```bash
-# Prefill pod metrics
-kubectl exec -n llm-d <prefill-pod> -c vllm -- curl -s http://localhost:8000/metrics | grep prefix_cache
-
-# Decode pod metrics  
-kubectl exec -n llm-d <decode-pod> -c vllm -- curl -s http://localhost:8001/metrics | grep prefix_cache
+# Decode pod metrics
+POD=$(kubectl get pods -n llm-d -l app=ms-llm-d-modelservice-decode -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -n llm-d $POD -c vllm -- curl -s http://localhost:8001/metrics | grep prefix_cache
 ```
 
 ### Expected Results
@@ -118,14 +119,13 @@ With P/D disaggregation working:
 
 ### Check EPP Configuration
 ```bash
-kubectl describe pod -l llm-d.ai/epp -n llm-d
-# Should show: PD_ENABLED: true
+kubectl get deploy -n llm-d ms-llm-d-modelservice-epp
+kubectl logs -n llm-d deploy/ms-llm-d-modelservice-epp -c epp -f --tail=100
 ```
 
-### Check NIXL Ports
+### Verify ext-proc is attached
 ```bash
-kubectl exec -n llm-d <pod> -c vllm -- netstat -tuln | grep 5557
-# Should show: tcp ... :5557 ... LISTEN
+kubectl get envoyfilter -n llm-d epp-ext-proc -o yaml | grep -E '(workloadSelector|cluster_name|failure_mode_allow)'
 ```
 
 ### Check Pod Roles

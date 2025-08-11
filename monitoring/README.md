@@ -1,27 +1,26 @@
 # LLM-D Monitoring Stack
 
-This directory contains the **exact monitoring configuration** currently deployed in the `llm-d-monitoring` namespace, extracted directly from the running cluster.
+This directory contains example monitoring configuration you can adapt for your cluster. It is not required for the 0.2.0 demo and versions may differ from your environment.
 
 ## 📊 **What's Deployed**
-
-### **Grafana Dashboard Stack**
-- **Grafana Instance**: Latest version with provisioned dashboards
-- **LLM-D Performance Dashboard**: Comprehensive performance monitoring with 87.4% cache hit rate metrics
+- **Grafana Dashboard Stack** (optional)
+- **LLM-D Performance Dashboard**: Cache hit rate and stickiness examples
 - **Real-time Metrics**: TTFT, cache hit rates, per-pod performance tracking
+- **Automatic Provisioning**: Example dashboards and datasources
 - **Automatic Provisioning**: Dashboards and datasources auto-configured
 
 ### **Prometheus Monitoring**
-- **Prometheus v2.45.0**: Production metrics collection
+- **Prometheus**: Metrics collection (version flexible)
 - **Comprehensive Scraping**: vLLM instances, EPP pods, Kubernetes components
-- **Alerting Rules**: Critical performance and availability alerts
-- **7-day Retention**: Optimized storage for performance analysis
+- **Alerting Rules**: Example performance and availability alerts
+- **Retention**: Configure to your environment needs
 
 ## 🚀 **Quick Deployment**
 
 ### **Deploy Complete Stack**
 ```bash
-# Deploy both Grafana and Prometheus
-kubectl create namespace llm-d-monitoring
+# Deploy Grafana and Prometheus (optional)
+kubectl create namespace llm-d-monitoring || true
 kubectl apply -f monitoring/grafana.yaml
 kubectl apply -f monitoring/prometheus.yaml
 ```
@@ -30,7 +29,7 @@ kubectl apply -f monitoring/prometheus.yaml
 ```bash
 # Get Grafana URL
 kubectl get route grafana-secure -n llm-d-monitoring
-# Login: admin / admin
+# Default login (if configured): admin / admin
 
 # Get Prometheus URL (if needed)
 kubectl port-forward svc/prometheus 9090:9090 -n llm-d-monitoring

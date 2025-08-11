@@ -1,0 +1,14 @@
+apiVersion: telemetry.istio.io/v1alpha1
+kind: Telemetry
+metadata:
+  name: llm-d-gateway-logs-min
+  namespace: llm-d
+spec:
+  selector:
+    matchLabels:
+      gateway.networking.k8s.io/gateway-name: llm-d-gateway
+  accessLogging:
+  - providers:
+    - name: envoy
+    disabled: false
+

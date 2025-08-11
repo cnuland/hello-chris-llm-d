@@ -52,19 +52,34 @@ data:
     plugins:
     - type: prefix-cache-scorer
       parameters:
+        # Switch to tracking mode with explicit token processor and KV block index configs
+        mode: cache_tracking
+        tokenProcessorConfig:
+          blockSize: 16
+          hashSeed: "42"
+        kvBlockIndexConfig:
+          enableMetrics: true
+          metricsLoggingInterval: 60000000000  # 60s in nanoseconds
         hashBlockSize: 16
         maxPrefixBlocksToMatch: 256
         lruCapacityPerServer: 31250
     - type: decode-filter
     - type: max-score-picker
     - type: single-profile-handler
+      parameters:
+        # Emit the chosen upstream endpoint so the gateway Lua filter can override routing.
+        # Expected value: "<ip-or-host>:<port>" of the decode pod selected by the picker.
+        # The Envoy Lua filter will copy this into x-envoy-upstream-override-host if needed,
+        # but we also emit the override header directly for compatibility.
+        selectedEndpointHeader: x-gateway-destination-endpoint
+        selectedOverrideHeader: x-envoy-upstream-override-host
     schedulingProfiles:
     - name: default
       plugins:
       - pluginRef: decode-filter
-      - pluginRef: max-score-picker
       - pluginRef: prefix-cache-scorer
-        weight: 50
+        weight: 90
+      - pluginRef: max-score-picker
 ---
 apiVersion: v1
 kind: Service
@@ -95,6 +110,8 @@ spec:
     metadata:
       labels:
         llm-d.ai/epp: ms-llm-d-modelservice-epp
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       serviceAccountName: ms-llm-d-modelservice-epp
       containers:
@@ -114,6 +131,8 @@ spec:
         - "9002"
         - --grpcHealthPort
         - "9003"
+        - --secureServing
+        - "false"
         - -configFile
         - config/default-config.yaml
         ports:
@@ -140,6 +159,13 @@ spec:
         volumeMounts:
         - name: plugins-config-volume
           mountPath: /config
+      - name: debug
+        image: nicolaka/netshoot:latest
+        imagePullPolicy: IfNotPresent
+        command: ["bash","-lc","echo debug sidecar ready; sleep 31536000"]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
       volumes:
       - name: plugins-config-volume
         configMap:

@@ -5,69 +5,72 @@ A concise, production-oriented demo of distributed LLM inference featuring cache
 
 ## Getting Started
 
-Prerequisites and setup
-- A Kubernetes cluster (v1.27+) or OpenShift. GPU nodes recommended for real inference
-- kubectl (or oc) configured for your cluster/context
-- A gateway implementation (Istio or kGateway) for external access and Envoy External Processing (EPP)
-- Recommended: install the base infrastructure with llm-d-infra before deploying this repo’s demo components
+Quickstart (three commands)
+- Prerequisites
+  - An Istio Gateway named llm-d-gateway in namespace llm-d (community Istio is fine)
+  - oc and tkn CLIs installed and logged into your cluster
+  - Optional (first run if models need auth): export HF_TOKEN=… in your terminal so your cluster can fetch gated models
 
-Install the base infrastructure first (recommended)
-- This repository deploys llm-d-infra under llm-d-infra/. Use its quickstart to prepare namespaces, gateway, and optional monitoring.
-- Example:
-  - cd llm-d-infra/quickstart
-  - ./install-deps.sh   # installs helm/helmfile, kustomize, yq, etc.
-  - export HF_TOKEN="your-hf-token"   # if you plan to pull gated models
-  - ./llmd-infra-installer.sh --gateway istio   # or --gateway kgateway
-  - For details and additional options, see llm-d-infra/quickstart/README.md
+Run these from the repo root:
+1) chmod +x scripts/make-demo.sh
+2) NS=llm-d ./scripts/make-demo.sh
+3) tkn pipelinerun logs -n llm-d --last -f --all
 
-Deploy the demo components (dry-run by default)
-- After the infrastructure is installed, run from the repo root:
-  - Preview what will be applied:
-    scripts/deploy.sh --monitoring
-  - Apply core plus monitoring:
-    scripts/deploy.sh --apply --monitoring
+What the script does
+- Ensures namespace llm-d and applies all LLM-D assets (gateway, HTTPRoute, decode Service/Deployment, EPP, DestinationRules, ModelService)
+- Applies Tekton assets (RBAC, cache-pod-restart and cache-hit pipelines)
+- Restarts decode pods for clean metrics
+- Launches the ramp PipelineRun
+- Prints how to stream the logs if tkn is installed
 
-What gets installed
-- Core llm-d components via Kustomize at assets/llm-d
-- Envoy external processor filter at assets/epp-external-processor.yaml
-- Monitoring in llm-d-monitoring namespace:
-  - Prometheus (v2.45.0) with scrape jobs for vLLM, EPP, gateway and k8s
-  - Grafana with provisioned Prometheus datasource and the LLM Performance dashboard
+Configuration (env vars)
+- NS: target namespace (default llm-d) used by scripts/make-demo.sh
+- HOST_HEADER: default llm-d.demo.local
+- GATEWAY_URL: default http://llm-d-gateway-istio.$NS.svc.cluster.local
+- PROM_URL: default http://thanos-querier.openshift-monitoring.svc.cluster.local:9091 (OpenShift). Override for other platforms
+- WARMUP_COUNT, REQUESTS, SLEEP_SECONDS: can be adjusted by editing assets/cache-aware/tekton/cache-ramp-pipelinerun.yaml
+
+What this deploys
+- Pool-backed routing with Istio Gateway:
+  - HTTPRoute -> Service (ms-llm-d-modelservice-decode:8000)
+  - EnvoyFilter envoy.filters.http.ext_proc -> EPP gRPC (ms-llm-d-modelservice-epp:9002)
+  - EPP consults InferencePool llm-d for endpoint discovery/selection
+- vLLM tuned for prefix cache: enable_prefix_caching, block_size=16, no chunked prefill
+- Tekton cache-hit pipeline with Prometheus aggregation (falling back to pod IPs/Service if needed) and a stickiness summary filtered to the active Test-ID and Session-ID
 
 Validate
-- Core status (adjust namespace/model names as needed):
-  kubectl get pods -n llm-d
-- Grafana route URL:
-  kubectl -n llm-d-monitoring get route grafana-secure -o jsonpath='{.spec.host}'
-  # Login: admin / admin (demo)
-- Prometheus service:
-  kubectl -n llm-d-monitoring get svc prometheus
+- Pods:
+  oc -n llm-d get pods
+- Stream pipeline logs:
+  tkn pipelinerun logs -n llm-d --last -f --all
+- Look for lines in the output like:
+  - Delta Hit Rate (measured traffic): 9x.x%
+  - Averages over N requests: TTFT=… ms, TPOT=… ms, TOTAL=… ms
+  - MULTI-SESSION STICKINESS SUMMARY: Session … Stickiness % 100.0
 
-Uninstall (manual example)
-- Use kubectl delete with the same manifests you applied, or roll back using your Git history. If desired, I can add a cleanup script on request.
+Uninstall
+- Use oc delete with the same manifests (see deploy.sh apply_assets function for the list).
 
 
 ## Architecture (overview)
 
 High-level flow
-1) Client → Gateway (TLS) → Envoy external processing (EPP)
-2) EPP evaluates cache affinity, load, and policy → issues routing decision
-3) HTTPRoute forwards to the backend service based on EPP decision
-4) Cache-aware service + session affinity target decode pods
-5) Decode pods (routing proxy + vLLM) execute inference with prefix cache
-6) Prometheus scrapes metrics; Grafana visualizes TTFT, cache, throughput, etc.
+1) Client → Istio Gateway → Envoy External Processing (EPP)
+2) EPP scores endpoints for KV-cache reuse and health → returns routing decision (header hint)
+3) Gateway forwards to decode Service/pod honoring EPP’s decision
+4) vLLM pods execute inference with prefix cache enabled (TTFT improves after warm-up)
+5) Prometheus aggregates metrics; Tekton prints hit-rate and timings
 
 Key components
-- EPP (External Processor): request inspection, scoring (cache-aware + load), decision
-- Gateway/Envoy: external processing integration point (EnvoyFilter)
-- Cache-aware service: Kubernetes Service with session affinity for locality
-- vLLM pods: routing proxy on 8000, vLLM metrics on 8001, prefix cache enabled
-- Observability: Prometheus scrape jobs and pre-provisioned Grafana dashboard
+- EPP (External Processor): cache-aware scoring and decisioning
+- Istio Gateway/Envoy: ext_proc integration; EPP uses InferencePool for endpoint discovery and scoring
+- vLLM pods: prefix cache enabled, block_size=16, no chunked prefill
+- Observability: Prometheus (or Thanos) used by the Tekton Task to aggregate pod metrics
 
 Why it works
-- Session affinity concentrates repeat traffic to warm pods
-- Prefix caching improves latency and GPU efficiency
-- External processing keeps routing policy out of the data-plane configs and under control
+- EPP-driven routing concentrates session traffic onto warm pods for maximal KV cache reuse
+- Prefix caching reduces TTFT and total latency significantly for repeated prompts
+- All policy is centralized in EPP; the data plane remains simple
 
 For a deeper technical outline (design rationale, metrics, demo flow), see the blog posts in blog/ (do not modify them here).
 
@@ -101,11 +104,11 @@ Files of record
 
 
 ## Repository Layout (selected)
-- assets/llm-d: primary Kustomize for core deployment
-- assets/monitoring: ServiceMonitor/PodMonitor examples for cluster monitoring operators
-- monitoring/: exact manifests synced with live llm-d-monitoring namespace
-- scripts/deploy.sh: minimal deployer, dry-run by default, supports --monitoring
-- guidellm/: Tekton/benchmarking assets (optional)
+- deploy.sh: single command installer and validator for the Istio + EPP demo
+- assets/llm-d: decode Service/Deployment, EPP stack, HTTPRoute
+- assets/cache-aware/tekton: Tekton cache-hit pipeline definition
+- monitoring/: optional monitoring assets (Grafana dashboards, configs)
+- llm-d-infra/: upstream infrastructure (optional), not required for this demo path
 
 
 ## Notes and expectations

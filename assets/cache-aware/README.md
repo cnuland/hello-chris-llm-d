@@ -1,13 +1,13 @@
 # KV-Cache Aware Routing for LLM-D
 
-A production-ready demonstration of intelligent KV-cache aware routing for Large Language Model inference, achieving 90%+ cache hit rates on Llama 3.2 3B Instruct through optimized vLLM configuration and session affinity.
+A production-ready demonstration of intelligent KV-cache aware routing for Large Language Model inference, validated on Llama 3.2 3B Instruct through optimized vLLM configuration and EPP-driven stickiness (Envoy External Processing).
 
 ## Overview
 
 This demo shows how to implement high-performance LLM inference with:
 
 - vLLM v0.10.0 with optimized prefix caching (block_size=16, enable_prefix_caching=True)
-- Session affinity for consistent cache utilization
+- EPP-driven stickiness (ext-proc at the Istio gateway)
 - Intelligent routing through gateway + EPP
 - Automated testing via Tekton pipelines
 - Monitoring with Prometheus metrics and Grafana
@@ -18,6 +18,7 @@ This demo shows how to implement high-performance LLM inference with:
 - Model: meta-llama/Llama-3.2-3B-Instruct
 - Namespace: llm-d
 - Pipelines: restart decode pods, then run cache ramp test with tiny warm-up to capture ramp-up delta
+- Stickiness: EPP on-path; mesh fallback is ROUND_ROBIN (no mesh-level sticky hashing configured)
 
 ## Quick Start
 
@@ -46,6 +47,7 @@ tkn task start cache-hit-test -n llm-d --param host=llm-d.demo.local --showlog
 Defaults point to the in-cluster Istio gateway service and host:
 - Gateway URL: http://llm-d-gateway-istio.llm-d.svc.cluster.local
 - Host header: llm-d.demo.local
+- Ext-proc: enabled on llm-d-gateway; failure_mode_allow=true (bypass if EPP unavailable)
 
 ## Manual API usage
 
@@ -75,8 +77,8 @@ curl -sk -H "Host: $HOST" -H "Content-Type: application/json" \
 
 - Model: meta-llama/Llama-3.2-3B-Instruct
 - vLLM Image: ghcr.io/llm-d/llm-d:v0.2.0 (vLLM v0.10.0)
-- Prefix cache metrics used: vllm:prefix_cache_queries_total, vllm:prefix_cache_hits_total
-- Session Affinity: ClientIP (2h)
+- Prefix cache metrics used: prefix_cache_queries_total, prefix_cache_hits_total
+- Stickiness: EPP-driven via Envoy ext-proc; mesh fallback is ROUND_ROBIN
 - EPP in path via Envoy ext-proc filtering (assets/envoyfilter-epp.yaml)
 
 ## Expected results
@@ -84,7 +86,7 @@ curl -sk -H "Host: $HOST" -H "Content-Type: application/json" \
 - After restart + tiny warm-up, ramp run should show:
   - Aggregate delta hit rate ~95–99% over measured loop
   - Overall pod hit rate ~98%
-  - Session stickiness: EXCELLENT (all traffic to one pod)
+- Session stickiness: EXCELLENT (all traffic to one pod) when EPP is healthy; ROUND_ROBIN fallback otherwise
 
 ## File Structure
 

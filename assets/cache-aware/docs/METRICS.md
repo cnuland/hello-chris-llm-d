@@ -29,8 +29,8 @@ spec:
 ### Key Metrics
 
 #### KV-Cache Specific Metrics (used by validator)
-- vllm:prefix_cache_queries_total
-- vllm:prefix_cache_hits_total
+- prefix_cache_queries_total
+- prefix_cache_hits_total
 - Cache Hit Rate: Calculated as `hits/queries * 100` over the measured loop
 
 #### Additional vLLM Metrics (optional)
@@ -47,9 +47,9 @@ spec:
 
 ### Direct Pod Access
 ```bash
-# Access metrics from a decode pod (port may be 8200 or 8001 depending on args)
-POD=$(kubectl get pods -n llm-d -l 'llm-d.ai/role=decode' -o jsonpath='{.items[0].metadata.name}')
-kubectl exec -it $POD -n llm-d -c vllm -- sh -c 'curl -s localhost:8200/metrics || curl -s localhost:8001/metrics' | \
+# Access metrics from a decode pod
+POD=$(kubectl get pods -n llm-d -l 'app=ms-llm-d-modelservice-decode' -o jsonpath='{.items[0].metadata.name}')
+kubectl exec -it $POD -n llm-d -c vllm -- sh -c 'curl -s localhost:8001/metrics || curl -s localhost:8200/metrics' | \
   grep -E '(prefix_cache_queries_total|prefix_cache_hits_total)'
 ```
 
@@ -80,8 +80,8 @@ tkn pipeline start cache-hit-pipeline -n llm-d --use-param-defaults --showlog
 For manual cache testing via gateway:
 
 ```bash
-# Run the canonical cache test script (in-cluster gateway + Host header)
-bash assets/cache-aware/canonical-cache-test.sh
+# Run the cache test via Tekton or your own script (in-cluster gateway + Host header)
+# Example Tekton start shown above
 ```
 
 This script:

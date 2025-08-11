@@ -1,0 +1,48 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: llm-d-gateway-upstream-header
+  namespace: llm-d
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: llm-d-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        portNumber: 80
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inline_code: |
+            function envoy_on_request(handle)
+              -- If EPP emitted a destination endpoint, set the override header
+              local dest = handle:headers():get("x-gateway-destination-endpoint")
+              if dest ~= nil and dest ~= "" then
+                handle:headers():replace("x-envoy-upstream-override-host", dest)
+                handle:streamInfo():dynamicMetadata():set("envoy.lua", "override", dest)
+              else
+                -- For debugging: surface what the request override host is if already present
+                local o = handle:headers():get("x-envoy-upstream-override-host")
+                if o ~= nil and o ~= "" then
+                  handle:streamInfo():dynamicMetadata():set("envoy.lua", "override", o)
+                end
+              end
+            end
+            function envoy_on_response(handle)
+              local md = handle:streamInfo():dynamicMetadata():get("envoy.lua")
+              if md ~= nil and md["override"] ~= nil then
+                handle:headers():add("x-override-host", md["override"]) 
+              end
+            end
+

@@ -1,12 +1,12 @@
 # Multi-Model Load Balancing Demo Setup
 
-This directory contains configurations to deploy a second model (Llama-3.2-3B) alongside the existing Llama-3.2-1B model to demonstrate LLM-D's multi-model load balancing and gateway routing capabilities.
+This directory contains example configurations to deploy an additional model for multi-model routing. It is not part of the 0.2.0 cache-aware demo flow and the external routes shown are illustrative.
 
 ## GPU Resource Requirements
 
-- **Llama-3.2-1B**: 1 GPU (already deployed)
-- **Llama-3.2-3B**: 2 GPUs (new deployment)
-- **Total Required**: 3 GPUs out of 24 available ✅
+- **Llama-3.2-1B**: example footprint
+- **Llama-3.2-3B**: example footprint
+- **Total Required**: depends on your cluster
 
 ## Deployment
 

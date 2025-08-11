@@ -14,14 +14,14 @@ The KV-Cache Aware Routing system implements intelligent request routing for LLM
 - **Optimizations**:
   - Prefix caching enabled with builtin hash algorithm
   - Block size: 16 tokens (optimized for cache efficiency)
-  - Chunked prefill disabled for better cache consistency
-  - GPU memory utilization: 90%
+- Chunked prefill disabled for better cache consistency
+- GPU memory utilization: tuned for stability (e.g., 70–90% depending on cluster)
 
 #### Routing Proxy Sidecar
 - **Image**: `ghcr.io/llm-d/llm-d-routing-sidecar:v0.2.0`
-- **Port**: 8000 (external facing)
-- **Function**: Routes requests to vLLM while maintaining session context
-- **Deployment**: Init container with `restartPolicy: Always` (sidecar behavior)
+- **Port**: 8000 (service-facing)
+- **Function**: Forwards API traffic to vLLM (8001) while maintaining request context
+- **Deployment**: Runs as sidecar (no init-container startup dependency)
 
 #### External Processing Pod (EPP)
 - **Image**: `ghcr.io/llm-d/llm-d-inference-scheduler:v0.2.1`
@@ -34,9 +34,9 @@ The KV-Cache Aware Routing system implements intelligent request routing for LLM
 ### 2. Service Architecture
 
 #### EPP Gateway Path
-- **HTTPRoute**: Routes `/v1/*` traffic to the EPP service (ms-llm-d-modelservice-epp:9002)
-- **EnvoyFilter**: External Processing filter forwards requests to EPP gRPC (assets/envoyfilter-epp.yaml)
-- **Health Path**: `/v1/models` goes to decode Service (ms-llm-d-modelservice-decode:8000)
+- **HTTPRoute**: Routes `/v1/*` traffic through the Istio gateway where the ext-proc filter invokes EPP (ms-llm-d-modelservice-epp:9002)
+- **EnvoyFilter**: External Processing filter configured on llm-d-gateway (failure_mode_allow=true)
+- **Health Path**: Optionally use a plain route for `/v1/models` if you want to keep it outside ext-proc
 
 #### External Gateway
 - **Gateway**: In-cluster Istio gateway Service (llm-d-gateway-istio.llm-d.svc.cluster.local)
@@ -64,9 +64,9 @@ Decode vLLM (8000/8001 metrics)
 - **Hit Rate**: Target ≥85%+ during demo validator loop
 
 #### Session Affinity
-- **Method**: ClientIP-based routing
-- **Duration**: 2 hours (7200 seconds)
-- **Benefits**: Ensures requests from same client hit same pod cache
+- **Method**: EPP-driven stickiness via ext-proc at the gateway
+- **Mesh Fallback**: DestinationRule currently ROUND_ROBIN (no mesh-level sticky hashing configured)
+- **Benefits**: Ensures requests with shared context route to the same warm pod when EPP is healthy
 
 ## Key Configuration Parameters
 
@@ -82,13 +82,7 @@ args:
 ```
 
 ### Session Affinity Configuration
-```yaml
-spec:
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 7200
-```
+EPP provides stickiness decisions. No Kubernetes Service sessionAffinity or mesh consistentHash is required for this demo. You may optionally add a DestinationRule with consistentHash on a header (e.g., x-session-id) as a backup if you want sticky fallback when EPP is down.
 
 ## Performance Characteristics
 
