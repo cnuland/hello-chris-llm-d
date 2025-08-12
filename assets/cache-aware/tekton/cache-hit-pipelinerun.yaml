@@ -9,6 +9,6 @@ spec:
     - name: namespace
       value: "llm-d"
     - name: gateway-url
-      value: "http://llm-d-gateway-istio.llm-d.svc.cluster.local"
+      value: "http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local"
     - name: host
-      value: "llm-d.demo.local"
+      value: "llm-d-infra-inference-gateway.localhost"

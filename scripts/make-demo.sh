@@ -43,10 +43,29 @@ apply_llmd_assets() {
     assets/llm-d/decode-service.yaml \
     assets/llm-d/decode-deployment.yaml \
     assets/llm-d/epp.yaml \
-    assets/llm-d/modelservice.yaml
+    assets/llm-d/inference-crs.yaml \
+    assets/llm-d/modelservice.yaml \
+    assets/envoyfilter-epp.yaml \
+    assets/envoyfilter-gateway-access-logs.yaml \
+    assets/envoyfilter-gateway-lua-upstream-header.yaml \
+    assets/envoyfilter-gateway-add-upstream-header.yaml \
+    assets/gateway-session-header-normalize.yaml
   do
     if [ -f "$f" ]; then cmd oc apply -n "$NS" -f "$f"; fi
   done
+
+  # Ensure Helm-provisioned DR switches from ROUND_ROBIN to consistentHash on x-session-id
+  if oc get destinationrule -n "$NS" ms-llm-d-modelservice-decode >/dev/null 2>&1; then
+    info "Patching Helm DestinationRule for consistentHash on x-session-id"
+    cmd oc -n "$NS" patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' || true
+  fi
+
+  # Restart gateway to pick up EnvoyFilters
+  if oc get deploy -n "$NS" llm-d-infra-inference-gateway-istio >/dev/null 2>&1; then
+    info "Restarting gateway to load EnvoyFilters"
+    cmd oc -n "$NS" rollout restart deploy/llm-d-infra-inference-gateway-istio
+    cmd oc -n "$NS" rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s || true
+  fi
 
   # Optional: mesh-level consistent-hash DR safety net
   if [ -f assets/cache-aware/destination-rule-session-affinity.yaml ]; then

@@ -1,0 +1,38 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-epp-destination-override
+  namespace: llm-d
+spec:
+  workloadSelector:
+    labels:
+      app.kubernetes.io/gateway: llm-d-infra-inference-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+        portNumber: 80
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inlineCode: |
+            function envoy_on_request(handle)
+              local h = handle:headers()
+              -- EPP writes a hint header with the chosen upstream endpoint
+              local dest = h:get("x-gateway-destination-endpoint")
+              if dest ~= nil and dest ~= "" then
+                -- Force Envoy to use the chosen upstream host
+                h:replace("x-envoy-upstream-override-host", dest)
+                -- Optional debug marker
+                h:add("x-destination-endpoint-debug", "set-by-epp-lua")
+              end
+            end

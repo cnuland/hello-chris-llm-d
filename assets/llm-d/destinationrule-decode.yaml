@@ -9,6 +9,7 @@ spec:
     loadBalancer:
       consistentHash:
         httpHeaderName: "x-session-id"
+        minimumRingSize: 4096
     connectionPool:
       tcp:
         maxConnections: 200
@@ -17,3 +18,9 @@ spec:
         http2MaxRequests: 2000
         maxRequestsPerConnection: 100
         idleTimeout: 900s
+    outlierDetection:
+      consecutive5xxErrors: 1000000
+      consecutiveGatewayErrors: 1000000
+      interval: 120s
+      baseEjectionTime: 300s
+      maxEjectionPercent: 0

@@ -6,14 +6,14 @@ metadata:
 spec:
   selector:
     matchLabels:
-      gateway.networking.k8s.io/gateway-name: llm-d-gateway
+      gateway.networking.k8s.io/gateway-name: llm-d-infra-inference-gateway
   accessLogging:
   - providers:
     - name: envoy
     disabled: false
     filter:
       # Only log traffic for our demo host
-      expression: request.headers[":authority"] == "llm-d.demo.local"
+      expression: request.headers[":authority"] == "llm-d-infra-inference-gateway.localhost"
     output:
       format: json
       json:

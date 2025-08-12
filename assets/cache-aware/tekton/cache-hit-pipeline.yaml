@@ -10,10 +10,10 @@ spec:
       default: "llm-d"
     - name: gateway-url
       description: "Gateway URL for testing"
-      default: "http://llm-d-gateway-istio.llm-d.svc.cluster.local"
+      default: "http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local"
     - name: host
       description: "HTTP Host header to match HTTPRoute (empty for in-cluster/gateway default)"
-      default: ""
+      default: "llm-d-infra-inference-gateway.localhost"
     - name: warmup-count
       description: "Number of warm-up requests to send before measuring"
       default: "1"
@@ -85,6 +85,11 @@ spec:
         
         echo "=== Production KV-Cache Validation Script ==="
         echo "Tests 90% cache hit rate with optimized vLLM v0.10.0 configuration"
+        echo ""
+        
+        # Use gateway service DNS directly from inside the cluster
+        GATEWAY_URL="http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local"
+        echo "Using gateway URL: $GATEWAY_URL"
         echo ""
         
         NAMESPACE="$(params.namespace)"
@@ -193,6 +198,20 @@ spec:
         AGG_BASELINE_Q_INT=${AGG_BASELINE_Q_INT%%.*}
         AGG_BASELINE_H_INT=${AGG_BASELINE_H_INT%%.*}
         echo "Baseline after warm-up (aggregate) - Queries: $AGG_BASELINE_Q_INT, Hits: $AGG_BASELINE_H_INT"
+        
+        # Capture per-pod baseline queries totals for stickiness attribution later
+        BASELINE_POD_FILE="/tmp/baseline_pod_q.txt"
+        : > "$BASELINE_POD_FILE"
+        NAMES=($(kubectl get pods -n "$NAMESPACE" -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].metadata.name}'))
+        IPS=($(kubectl get pods -n "$NAMESPACE" -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].status.podIP}'))
+        declare -A IP2NAME
+        for idx in "${!NAMES[@]}"; do IP2NAME["${IPS[$idx]}"]="${NAMES[$idx]}"; done
+        for ip in "${IPS[@]}"; do
+          # Sum all series for vllm:prefix_cache_queries_total on this pod
+          val=$(curl -s "http://$ip:8000/metrics" | grep -E '^vllm:prefix_cache_queries_total\{' | grep -o '[0-9.]*$' | awk '{s+=$1} END {print s+0}')
+          val=${val%%.*}
+          echo "$ip $val" >> "$BASELINE_POD_FILE"
+        done
         echo ""
         
         echo "Running cache-optimized test via gateway with session affinity..."
@@ -247,10 +266,15 @@ spec:
         LAST3_TTFT_MS=0
         LAST3_POST_MS=0
         
+        # file to collect upstream hosts from gateway responses
+        UP_LIST=/tmp/upstreams.list
+        : > "$UP_LIST"
+        
         for i in $(seq 1 "$REQUESTS"); do
             echo "  Enhanced cache test request $i (session: $SESSION_ID)..."
+            HDR_FILE="/tmp/llmd-headers-$i.txt"
             # Capture timings: time_starttransfer ~ TTFT (approx), time_total = total latency
-            READOUT=$(curl -k -s -o /tmp/llmd-cache-test-resp.json -w "%{time_starttransfer} %{time_total}" -X POST "$GATEWAY_URL/v1/chat/completions" \
+            READOUT=$(curl -k -s -D "$HDR_FILE" -o /tmp/llmd-cache-test-resp.json -w "%{time_starttransfer} %{time_total}" -X POST "$GATEWAY_URL/v1/chat/completions" \
                 ${HOST_HEADER:+-H "Host: $HOST_HEADER"} \
                 -H "Content-Type: application/json" \
                 -H "Authorization: Bearer enhanced-test-token-$SESSION_ID" \
@@ -282,11 +306,83 @@ spec:
               LAST3_POST_MS=$(echo "$LAST3_POST_MS + $POST_MS" | bc -l)
             fi
             
+            # Extract upstream host from response headers and collect
+            UP=$(grep -i '^x-upstream-host:' "$HDR_FILE" | awk -F': ' '{print $2}' | tr -d '\r')
+            [ -n "$UP" ] && echo "$UP" >> "$UP_LIST"
+            
             # Show brief response preview
             echo "    Response: $(cat /tmp/llmd-cache-test-resp.json | jq -r '.choices[0].message.content // .choices[0].text // .error // "No response"' | head -1 | tr -d '\n' | cut -c1-50)..."
             echo "    Timings: TTFT~$(printf '%.1f' "$TTFT_MS") ms, Post~$(printf '%.1f' "$POST_MS") ms, Total~$(printf '%.1f' "$TOTAL_MS") ms"
+            [ -n "$UP" ] && echo "    Upstream: $UP" || true
+            # Show a subset of response headers for diagnostics
+            echo "    Headers (subset):"
+            grep -Ei '^(x-|server:|via:|date:|x-envoy-)' "$HDR_FILE" || true
             sleep "$SLEEP_SECONDS"
         done
+        
+        # Compute per-pod stickiness from metrics deltas (robust, header-independent)
+        echo ""
+        echo "=== PER-POD STICKINESS FROM METRICS DELTAS ==="
+        FINAL_POD_FILE="/tmp/final_pod_q.txt"
+        : > "$FINAL_POD_FILE"
+        # Re-list current running decode pod IPs (in case of restarts)
+        IPS_NOW=($(kubectl get pods -n "$NAMESPACE" -l 'llm-d.ai/role=decode' --field-selector=status.phase=Running -o jsonpath='{.items[*].status.podIP}'))
+        for ip in "${IPS_NOW[@]}"; do
+          val=$(curl -s "http://$ip:8000/metrics" | grep -E '^vllm:prefix_cache_queries_total\{' | grep -o '[0-9.]*$' | awk '{s+=$1} END {print s+0}')
+          val=${val%%.*}
+          echo "$ip $val" >> "$FINAL_POD_FILE"
+        done
+        
+        # Build baseline map
+        declare -A BASE_Q
+        while read -r bip bq; do
+          BASE_Q["$bip"]=${bq:-0}
+        done < "$BASELINE_POD_FILE"
+        
+        # Compute per-pod deltas and summarize
+        TOTAL_DELTA=0
+        TOP_DELTA=0
+        TOP_IP="unknown"
+        echo "Per-pod query deltas (ip->delta, name):"
+        while read -r fip fq; do
+          bq=${BASE_Q["$fip"]:-0}
+          d=$(( ${fq:-0} - ${bq:-0} ))
+          # Only count positive deltas for the measured loop
+          if [ "$d" -lt 0 ]; then d=0; fi
+          TOTAL_DELTA=$((TOTAL_DELTA + d))
+          name="${IP2NAME[$fip]:-unknown}"
+          printf "  %s -> %d  (%s)\n" "$fip" "$d" "$name"
+          if [ "$d" -gt "$TOP_DELTA" ]; then TOP_DELTA=$d; TOP_IP=$fip; fi
+        done < "$FINAL_POD_FILE"
+        if [ "${TOTAL_DELTA:-0}" -gt 0 ]; then
+          STICKINESS_PCT_METRICS=$(awk -v t="$TOP_DELTA" -v n="$TOTAL_DELTA" 'BEGIN{if(n==0) printf("0.0"); else printf("%.1f", (t*100.0)/n)}')
+        else
+          STICKINESS_PCT_METRICS="0.0"
+        fi
+        echo "TopPodIP $TOP_IP  TopCount $TOP_DELTA  Total $TOTAL_DELTA  Stickiness % (metrics) $STICKINESS_PCT_METRICS"
+        
+        # Compute stickiness from captured upstream hosts (response headers)
+        echo ""
+        echo "=== SESSION STICKINESS (from x-upstream-host headers) ==="
+        TOTAL_UP=0
+        declare -A UPC
+        while read -r up; do
+          [ -z "$up" ] && continue
+          UPC[$up]=$(( ${UPC[$up]:-0} + 1 ))
+          TOTAL_UP=$((TOTAL_UP + 1))
+        done < "$UP_LIST"
+        TOPUP="unknown"
+        TOPCNT=0
+        for up in "${!UPC[@]}"; do
+          c=${UPC[$up]}
+          if [ "$c" -gt "$TOPCNT" ]; then TOPCNT=$c; TOPUP=$up; fi
+        done
+        if [ "${TOTAL_UP:-0}" -gt 0 ]; then
+          STICKINESS_PCT=$(awk -v t="$TOPCNT" -v n="$TOTAL_UP" 'BEGIN{if(n==0) printf("0.0"); else printf("%.1f", (t*100.0)/n)}')
+        else
+          STICKINESS_PCT="0.0"
+        fi
+        echo "Session $SESSION_ID  TopUpstream $TOPUP  TopCount $TOPCNT  Total $TOTAL_UP  Stickiness % $STICKINESS_PCT"
         
         # Compute averages
         AVG_TTFT_MS=$(echo "$SUM_TTFT_MS / $REQUESTS" | bc -l)
@@ -390,36 +486,46 @@ spec:
         
         echo ""
         echo "=== MULTI-SESSION STICKINESS SUMMARY (current Test-ID and Session-ID) ==="
-        # Discover gateway pods (try multiple selectors for robustness)
-        GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l istio=ingressgateway -o name 2>/dev/null || true)
-        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l app=istio-proxy -o name 2>/dev/null || true); fi
-        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l app=llm-d-gateway-istio -o name 2>/dev/null || true); fi
-        if [ -z "$GW_PODS" ]; then GW_PODS=$(kubectl get pods -n "$NAMESPACE" -l 'gateway.networking.k8s.io/gateway-name=llm-d-gateway' -o name 2>/dev/null || true); fi
+        # Discover gateway pods (search all namespaces for the Helm-managed gateway pods)
+        GW_JSON=$(kubectl get pods -A -l 'gateway.networking.k8s.io/gateway-name=llm-d-infra-inference-gateway' -o json)
+        GW_COUNT=$(echo "$GW_JSON" | jq '.items | length')
+        echo "Found $GW_COUNT gateway pod(s) for llm-d-infra-inference-gateway"
         
+        # Give the gateway a moment to flush access logs from this run
+        sleep 15
+
         # Collect last 60m logs from gateway into a temp file
         TMP_LOG=$(mktemp)
-        for p in $GW_PODS; do
-          kubectl logs -n "$NAMESPACE" ${p#pod/} --since=60m --tail=20000 || true
+        echo "$GW_JSON" | jq -r '.items[] | [.metadata.namespace, .metadata.name] | @tsv' | while IFS=$'\t' read -r GNS GNAME; do
+          kubectl logs -n "$GNS" "$GNAME" --since=60m --tail=20000 || true
         done > "$TMP_LOG"
         
-        # Extract only entries for this run's TEST_ID and SESSION_ID
-        # Output lines: "SID\tUPSTREAM"
-        TMP_PAIRS=$(mktemp)
-        cat "$TMP_LOG" | jq -rc "select((.x_test_id // .x-test-id // .request_headers.\"x-test-id\") == \"$TEST_ID\")
-          | select((.x_session_id // .x-session-id // .request_headers.\"x-session-id\" // .session_id // .request_headers.\"session-id\") == \"$SESSION_ID\")
-          | [(.x_session_id // .x-session-id // .request_headers.\"x-session-id\" // .session_id // .request_headers.\"session-id\" // \"unknown\"),
-             (.upstream_host // .x_upstream_host // .response_headers.\"x-upstream-host\" // \"unknown\")] | @tsv" 2>/dev/null > "$TMP_PAIRS" || true
-        
-        # Count upstream occurrences for this single session
+        # Count requests per upstream for this session & test ID
         TOTAL=0
         declare -A COUNTS
-        while IFS=$'\t' read -r SID UP; do
-          [ -z "$UP" ] && continue
-          COUNTS[$UP]=$(( ${COUNTS[$UP]:-0} + 1 ))
-          TOTAL=$((TOTAL + 1))
-        done < "$TMP_PAIRS"
         
-        # Determine top upstream and stickiness percentage
+        # Parse JSON logs looking for our test_id and session_id
+        while read -r line; do
+          # Try to parse as JSON, skip if fails
+          if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+            continue
+          fi
+          
+          # Extract fields
+          TEST_ID_LOG=$(echo "$line" | jq -r '.x_test_id // empty')
+          SESSION_ID_LOG=$(echo "$line" | jq -r '.x_session_id // empty')
+          UPSTREAM=$(echo "$line" | jq -r '.upstream_host // empty')
+          
+          # Skip if not our test ID or session ID
+          [ "$TEST_ID_LOG" != "$TEST_ID" ] && continue
+          [ "$SESSION_ID_LOG" != "$SESSION_ID" ] && continue
+          [ -z "$UPSTREAM" ] && continue
+          
+          COUNTS["$UPSTREAM"]=$(( ${COUNTS["$UPSTREAM"]:-0} + 1 ))
+          TOTAL=$((TOTAL + 1))
+        done < "$TMP_LOG"
+        
+        # Find the top upstream
         TOPUP="unknown"
         TOPCNT=0
         for UP in "${!COUNTS[@]}"; do
@@ -429,13 +535,15 @@ spec:
             TOPUP=$UP
           fi
         done
+        
+        # Calculate stickiness %
         if [ "${TOTAL:-0}" -gt 0 ]; then
           STICKINESS_PCT=$(awk -v t="$TOPCNT" -v n="$TOTAL" 'BEGIN{if(n==0) printf("0.0"); else printf("%.1f", (t*100.0)/n)}')
         else
           STICKINESS_PCT="0.0"
         fi
         
-        # Print a clean, single-line summary; escape literal percent in printf format
+        # Print summary
         printf "Session %s\tTopUpstream %s\tTopCount %d\tTotal %d\tStickiness %% %s\n" \
           "$SESSION_ID" "$TOPUP" "$TOPCNT" "${TOTAL:-0}" "$STICKINESS_PCT"
         
@@ -460,10 +568,10 @@ spec:
       default: "llm-d"
     - name: gateway-url
       description: "Gateway URL for testing"
-      default: "http://llm-d-gateway-istio.llm-d.svc.cluster.local"
+      default: "http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local"
     - name: host
       description: "HTTP Host header to match HTTPRoute"
-      default: "llm-d.demo.local"
+      default: "llm-d-infra-inference-gateway.localhost"
     - name: warmup-count
       description: "Number of warm-up requests to send before measuring"
       default: "1"

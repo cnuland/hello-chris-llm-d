@@ -1,0 +1,100 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-session-header-normalize
+  namespace: llm-d
+spec:
+  workloadSelector:
+    labels:
+      app.kubernetes.io/gateway: llm-d-infra-inference-gateway
+  configPatches:
+  # Apply on HTTP (80)
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+        portNumber: 80
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inlineCode: |
+            -- Utility to extract a cookie by name from the Cookie header
+            local function get_cookie(cookies, name)
+              if cookies == nil then return nil end
+              -- Split by ';'
+              for part in string.gmatch(cookies, "[^;]+") do
+                local s = string.gsub(part, "^%s+", "")
+                local k, v = string.match(s, "([^=]+)=([^=]+)")
+                if k ~= nil and v ~= nil and k == name then
+                  return v
+                end
+              end
+              return nil
+            end
+            function envoy_on_request(handle)
+              local h = handle:headers()
+              -- Normalize session header: prefer x-session-id; fallback to session-id header or cookie `session-id`
+              local xs = h:get("x-session-id")
+              if xs == nil or xs == "" then
+                local s = h:get("session-id")
+                if (s == nil or s == "") then
+                  local cookie = h:get("cookie")
+                  s = get_cookie(cookie, "session-id")
+                end
+                if s ~= nil and s ~= "" then
+                  h:add("x-session-id", s)
+                end
+              end
+            end
+  # Apply on HTTPS (443)
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+            subFilter:
+              name: envoy.filters.http.router
+        portNumber: 443
+    patch:
+      operation: INSERT_BEFORE
+      value:
+        name: envoy.filters.http.lua
+        typed_config:
+          '@type': type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+          inlineCode: |
+            -- Utility to extract a cookie by name from the Cookie header
+            local function get_cookie(cookies, name)
+              if cookies == nil then return nil end
+              for part in string.gmatch(cookies, "[^;]+") do
+                local s = string.gsub(part, "^%s+", "")
+                local k, v = string.match(s, "([^=]+)=([^=]+)")
+                if k ~= nil and v ~= nil and k == name then
+                  return v
+                end
+              end
+              return nil
+            end
+            function envoy_on_request(handle)
+              local h = handle:headers()
+              local xs = h:get("x-session-id")
+              if xs == nil or xs == "" then
+                local s = h:get("session-id")
+                if (s == nil or s == "") then
+                  local cookie = h:get("cookie")
+                  s = get_cookie(cookie, "session-id")
+                end
+                if s ~= nil and s ~= "" then
+                  h:add("x-session-id", s)
+                end
+              end
+            end

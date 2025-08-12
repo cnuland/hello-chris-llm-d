@@ -1,0 +1,46 @@
+apiVersion: networking.istio.io/v1alpha3
+kind: EnvoyFilter
+metadata:
+  name: gateway-json-access-logs
+  namespace: llm-d
+spec:
+  workloadSelector:
+    labels:
+      gateway.networking.k8s.io/gateway-name: llm-d-infra-inference-gateway
+  configPatches:
+  - applyTo: HTTP_FILTER
+    match:
+      context: GATEWAY
+      listener:
+        filterChain:
+          filter:
+            name: envoy.filters.network.http_connection_manager
+    patch:
+      operation: MERGE
+      value:
+        name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          access_log:
+          - name: envoy.access_loggers.file
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.access_loggers.file.v3.FileAccessLog
+              path: /dev/stdout
+              log_format:
+                json_format:
+                  start_time: "%START_TIME%"
+                  method: "%REQ(:METHOD)%"
+                  path: "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%"
+                  protocol: "%PROTOCOL%"
+                  response_code: "%RESPONSE_CODE%"
+                  duration: "%DURATION%"
+                  upstream_service_time: "%RESP(X-ENVOY-UPSTREAM-SERVICE-TIME)%"
+                  upstream_host: "%UPSTREAM_HOST%"
+                  route_name: "%ROUTE_NAME%"
+                  authority: "%REQ(:AUTHORITY)%"
+                  x_session_id: "%REQ(X-SESSION-ID)%"
+                  x_test_id: "%REQ(X-TEST-ID)%"
+                  user_agent: "%REQ(USER-AGENT)%"
+                  request_id: "%REQ(X-REQUEST-ID)%"
+                  downstream_remote_address: "%DOWNSTREAM_REMOTE_ADDRESS%"
+

@@ -56,26 +56,11 @@ assets/
 
 ## 🚀 Deployment
 
-Prereqs:
-- Namespace: llm-d
-- Hugging Face token secret:
+MANDATED: Install llm-d-infra via Helm first
+- This repo now assumes the gateway and core infra are provisioned by the upstream Helm chart.
+- Run: make infra NS=llm-d GATEWAY_CLASS=istio (HF_TOKEN in env if needed)
 
-```
-kubectl create namespace llm-d 2>/dev/null || true
-kubectl -n llm-d create secret generic llm-d-hf-token \
-  --from-literal=HF_TOKEN={{HF_TOKEN}} --dry-run=client -o yaml | kubectl apply -f -
-```
-
-Apply the gateway, EPP, and decode components:
-
-```
-kubectl apply -n llm-d -f assets/llm-d/gateway.yaml
-kubectl apply -n llm-d -f assets/llm-d/httproute.yaml
-kubectl apply -n llm-d -f assets/llm-d/decode-service.yaml
-kubectl apply -n llm-d -f assets/llm-d/decode-deployment.yaml
-kubectl apply -n llm-d -f assets/llm-d/epp.yaml
-kubectl -n llm-d rollout status deploy/ms-llm-d-modelservice-decode
-```
+Then apply model/pipeline layers as needed from this repo. Do not manually create gateway resources here; they are managed by the chart.
 
 Validate via the gateway (replace <LB> if you prefer direct IP):
 

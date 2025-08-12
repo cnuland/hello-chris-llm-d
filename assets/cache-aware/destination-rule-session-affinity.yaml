@@ -10,12 +10,8 @@ spec:
   trafficPolicy:
     loadBalancer:
       consistentHash:
-        # Use multiple session identifiers for better stickiness
-        httpHeaderName: "session-id"
-        # Fallback to user-agent if no session-id
-        httpCookie:
-          name: "session-id"
-          ttl: 7200s
+        httpHeaderName: "x-session-id"
+        minimumRingSize: 4096
     connectionPool:
       tcp:
         maxConnections: 100
@@ -26,33 +22,3 @@ spec:
         maxRetries: 3
         idleTimeout: 900s
         h2UpgradePolicy: UPGRADE
----
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: llama-3-2-1b-session-routing
-  namespace: llm-d
-  labels:
-    app: cache-aware
-spec:
-  hosts:
-  - llm-d-inference-gateway-llm-d.apps.rhoai-cluster.qhxt.p1.openshiftapps.com
-  gateways:
-  - llm-d-gateway
-  http:
-  - match:
-    - uri:
-        prefix: /v1
-    route:
-    - destination:
-        host: llama-3-2-1b-cache-aware-service.llm-d.svc.cluster.local
-        port:
-          number: 8000
-    headers:
-      request:
-        set:
-          # Ensure session header is preserved
-          x-session-id: "%REQ(session-id)%"
-          # Add user identification for better stickiness
-          x-forwarded-for: "%REQ(x-forwarded-for)%"
-    timeout: 300s

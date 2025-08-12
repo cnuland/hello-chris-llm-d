@@ -24,10 +24,10 @@ This demo shows how to implement high-performance LLM inference with:
 
 ### Prerequisites
 
-- OpenShift cluster with GPU nodes
-- Upstream Istio installed and functional
-- LLM-D infra installed (helm chart) with Istio gateway type, and llm-d namespace created
-- ModelService applied for meta-llama/Llama-3.2-3B-Instruct and pods Ready
+- Cluster with GPU nodes (recommended for model execution)
+- Istio installed and functional
+- LLM-D infra installed via Helm (MANDATED): make infra NS=llm-d GATEWAY_CLASS=istio
+- ModelService and serving pods running (can be applied from this repo or your operator)
 - Tekton Pipelines installed
 
 ### Install the Tekton assets

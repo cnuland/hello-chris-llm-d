@@ -4,10 +4,13 @@ metadata:
   name: ms-llm-d-epp-route
   namespace: llm-d
 spec:
+  hostnames:
+  - llm-d-infra-inference-gateway.localhost
+  - llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local
   parentRefs:
   - group: gateway.networking.k8s.io
     kind: Gateway
-    name: llm-d-gateway
+    name: llm-d-infra-inference-gateway
     namespace: llm-d
   rules:
   - matches:

@@ -5,23 +5,24 @@ A concise, production-oriented demo of distributed LLM inference featuring cache
 
 ## Getting Started
 
-Quickstart (three commands)
+MANDATED installation path: llm-d-infra Helm chart
 - Prerequisites
-  - An Istio Gateway named llm-d-gateway in namespace llm-d (community Istio is fine)
-  - oc and tkn CLIs installed and logged into your cluster
-  - Optional (first run if models need auth): export HF_TOKEN=… in your terminal so your cluster can fetch gated models
+  - Istio or kGateway installed (we use Istio)
+  - kubectl and helm CLIs installed and pointed at your cluster
+  - Optional (if using gated models): export HF_TOKEN=… so the chart can create/update the secret
 
-Run these from the repo root:
-1) chmod +x scripts/make-demo.sh
-2) NS=llm-d ./scripts/make-demo.sh
-3) tkn pipelinerun logs -n llm-d --last -f --all
+Quickstart (preferred)
+1) make infra NS=llm-d GATEWAY_CLASS=istio
+2) kubectl -n llm-d get gateway,svc,ingress -l app.kubernetes.io/instance=llm-d-infra
+3) tkn pipelinerun logs -n llm-d --last -f --all (optional, after Tekton assets are applied)
 
-What the script does
-- Ensures namespace llm-d and applies all LLM-D assets (gateway, HTTPRoute, decode Service/Deployment, EPP, DestinationRules, ModelService)
-- Applies Tekton assets (RBAC, cache-pod-restart and cache-hit pipelines)
-- Restarts decode pods for clean metrics
-- Launches the ramp PipelineRun
-- Prints how to stream the logs if tkn is installed
+What make infra does
+- Ensures namespace llm-d and optionally seeds the llm-d-hf-token secret from HF_TOKEN
+- Installs/updates the llm-d-infra Helm chart with gateway.gatewayClassName=istio
+- Produces an Istio Gateway, Service, and optional Ingress for the LLM-D inference gateway
+
+Legacy flow (deprecated)
+- The older scripts/make-demo.sh path applied ad-hoc manifests. Do not use it for fresh installs. Use make infra instead.
 
 Configuration (env vars)
 - NS: target namespace (default llm-d) used by scripts/make-demo.sh
@@ -30,13 +31,11 @@ Configuration (env vars)
 - PROM_URL: default http://thanos-querier.openshift-monitoring.svc.cluster.local:9091 (OpenShift). Override for other platforms
 - WARMUP_COUNT, REQUESTS, SLEEP_SECONDS: can be adjusted by editing assets/cache-aware/tekton/cache-ramp-pipelinerun.yaml
 
-What this deploys
-- Pool-backed routing with Istio Gateway:
-  - HTTPRoute -> Service (ms-llm-d-modelservice-decode:8000)
-  - EnvoyFilter envoy.filters.http.ext_proc -> EPP gRPC (ms-llm-d-modelservice-epp:9002)
-  - EPP consults InferencePool llm-d for endpoint discovery/selection
-- vLLM tuned for prefix cache: enable_prefix_caching, block_size=16, no chunked prefill
-- Tekton cache-hit pipeline with Prometheus aggregation (falling back to pod IPs/Service if needed) and a stickiness summary filtered to the active Test-ID and Session-ID
+What this deploys (via Helm chart)
+- The LLM-D inference gateway and wiring compatible with Istio Gateway API
+- Optional Ingress for convenience (can be disabled via values)
+- You can layer model-serving assets (ModelService, decode/prefill Deployments) and Tekton pipelines from this repo on top of the infra chart
+- vLLM/pipeline assets in this repo assume the Helm-provisioned gateway resources
 
 Validate
 - Pods:
@@ -49,7 +48,7 @@ Validate
   - MULTI-SESSION STICKINESS SUMMARY: Session … Stickiness % 100.0
 
 Uninstall
-- Use oc delete with the same manifests (see deploy.sh apply_assets function for the list).
+- make infra-uninstall NS=llm-d
 
 
 ## Architecture (overview)

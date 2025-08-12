@@ -119,10 +119,6 @@ spec:
         image: ghcr.io/llm-d/llm-d-inference-scheduler:v0.2.1
         imagePullPolicy: Always
         args:
-        - --poolName
-        - llm-d
-        - --poolNamespace
-        - llm-d
         - -v
         - "4"
         - --zap-encoder
