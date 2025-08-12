@@ -2,8 +2,8 @@
 
 > Current demo state (v0.2.0)
 > - Model: meta-llama/Llama-3.2-3B-Instruct
-> - Stickiness: EPP-driven via Envoy ext-proc on llm-d-gateway (failure_mode_allow=true); mesh fallback is ROUND_ROBIN
-> - Gateway: http://llm-d-gateway-istio.llm-d.svc.cluster.local with Host: llm-d.demo.local
+> - Stickiness: Primary EPP-driven via Envoy ext-proc; Fallback mesh stickiness enabled via Istio DestinationRule consistentHash on x-session-id with session header normalization
+> - Gateway: http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local (Host header optional; HTTPRoute includes service DNS hostname)
 
 This directory contains assets for deploying a complete **LLM-D (Large Language Model Disaggregation)** architecture. For comprehensive architecture details and demo scenarios, see the [main README](../README.md).
 
@@ -29,6 +29,14 @@ This directory contains assets for deploying a complete **LLM-D (Large Language 
 - Not required for this 0.2.0 demo flow. If enabled in your environment, ensure KV transfer compatibility accordingly.
 
 ## 🔧 Key Improvements
+
+### Istio + Stickiness (NEW)
+- Envoy ext-proc (assets/envoyfilter-epp.yaml) enables EPP on the gateway path
+- Session header normalization (assets/gateway-session-header-normalize.yaml) ensures x-session-id is present via header or Cookie fallback
+- Mesh fallback stickiness via DestinationRule consistentHash on x-session-id:
+  - assets/llm-d/destinationrule-decode.yaml (explicit safety net)
+  - Helm-provisioned DestinationRule patched automatically by Makefile/scripts to consistentHash(x-session-id)
+- HTTPRoute includes gateway service DNS hostname so Host header is optional
 
 ### Fixed Prefix Caching
 - **Before**: Broken LMCache configuration causing 0% hit rate
@@ -62,17 +70,25 @@ MANDATED: Install llm-d-infra via Helm first
 
 Then apply model/pipeline layers as needed from this repo. Do not manually create gateway resources here; they are managed by the chart.
 
-Validate via the gateway (replace <LB> if you prefer direct IP):
+Validate via the gateway:
 
+- In-cluster service (no Host header required):
 ```
-LB=$(kubectl -n llm-d get svc llm-d-gateway-istio -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-curl -sS -H 'Host: llm-d.demo.local' http://$LB/v1/models | jq .
-curl -sS -H 'Host: llm-d.demo.local' http://$LB/v1/chat/completions \
+curl -sS http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"meta-llama/Llama-3.2-3B-Instruct","messages":[{"role":"user","content":"Say hello from LLM-D"}],"max_tokens":16}' | jq .
+```
+- If you prefer using a specific Host header:
+```
+curl -sS -H 'Host: llm-d-infra-inference-gateway.localhost' \
+  http://llm-d-infra-inference-gateway-istio.llm-d.svc.cluster.local/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"meta-llama/Llama-3.2-3B-Instruct","messages":[{"role":"user","content":"Say hello from LLM-D"}],"max_tokens":16}' | jq .
 ```
 
-For Tekton-based cache tests, apply the Tekton assets and run the task afterward.
+For Tekton-based cache tests, use the Makefile target to apply and run:
+- make tekton NS=llm-d
+- Then stream logs: tkn pipelinerun logs -n llm-d --last -f --all
 
 ## 📊 Monitoring
 
