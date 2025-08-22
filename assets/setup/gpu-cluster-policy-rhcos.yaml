@@ -1,0 +1,99 @@
+apiVersion: nvidia.com/v1
+kind: ClusterPolicy
+metadata:
+  name: gpu-cluster-policy
+spec:
+  operator:
+    defaultRuntime: crio
+    runtimeClass: nvidia
+  driver:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: driver
+    version: "550.90.07"
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    rdma:
+      enabled: false
+    useOpenKernelModules: false
+    kernelModuleConfig:
+      name: ""
+    virtualTopology:
+      config: ""
+    licensingConfig:
+      nlsEnabled: false
+    certConfig:
+      name: ""
+    rollingUpdate:
+      maxUnavailable: "1"
+    upgradePolicy:
+      autoUpgrade: false
+      drain:
+        enabled: false
+        force: false
+        podSelector: ""
+        timeoutSeconds: 300
+        deleteEmptyDir: false
+      waitForCompletion:
+        timeoutSeconds: 0
+  toolkit:
+    enabled: true
+    repository: nvcr.io/nvidia/k8s
+    image: container-toolkit
+    version: v1.14.6-ubuntu20.04
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    installDir: "/usr/local/nvidia"
+  devicePlugin:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: k8s-device-plugin
+    version: v0.14.5-ubuntu20.04
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    args:
+    - "--mig-strategy=single"
+    - "--pass-device-specs=true"
+    - "--fail-on-init-error=true"
+    - "--device-list-strategy=envvar"
+    - "--nvidia-driver-root=/run/nvidia/driver"
+    env:
+    - name: NVIDIA_DRIVER_ROOT
+      value: "/run/nvidia/driver"
+  dcgm:
+    enabled: true
+    repository: nvcr.io/nvidia/cloud-native
+    image: dcgm
+    version: 3.3.3-1-ubuntu20.04
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+  dcgmExporter:
+    enabled: true
+    repository: nvcr.io/nvidia/k8s
+    image: dcgm-exporter
+    version: 3.3.3-3.2.0-ubuntu20.04
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    serviceMonitor:
+      enabled: false
+  gfd:
+    enabled: true
+    repository: nvcr.io/nvidia
+    image: gpu-feature-discovery
+    version: v0.8.2-ubuntu20.04
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+    sleepInterval: 60s
+  nodeStatusExporter:
+    enabled: true
+    repository: nvcr.io/nvidia/cloud-native
+    image: gpu-operator-validator
+    version: v23.9.2
+    imagePullPolicy: IfNotPresent
+    imagePullSecrets: []
+  daemonsets:
+    tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+    updateStrategy: RollingUpdate

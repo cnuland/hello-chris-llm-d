@@ -129,8 +129,11 @@ spec:
         - "9003"
         - --secureServing
         - "false"
+        - -poolName=llm-d
+        - -poolNamespace=llm-d
+        - -poolAPIVersion=inference.networking.x-k8s.io/v1alpha2
         - -configFile
-        - config/default-config.yaml
+        - /config/default-config.yaml
         ports:
         - containerPort: 9002
           name: grpc

@@ -1,0 +1,21 @@
+inferenceExtension:
+  replicas: 1
+  image:
+    name: llm-d-inference-scheduler
+    hub: ghcr.io/llm-d
+    tag: v0.2.1
+    pullPolicy: Always
+  extProcPort: 9002
+  # Use the default plugins-v2.yaml which contains the approximate prefix aware plugin configuration
+  pluginsConfigFile: "plugins-v2.yaml"
+  
+inferencePool:
+  targetPortNumber: 8000
+  modelServerType: vllm
+  modelServers:
+    matchLabels:
+      llm-d.ai/inferenceServing: "true"
+      llm-d.ai/role: decode
+
+provider:
+  name: none  # We're using Istio, not a specific gateway provider

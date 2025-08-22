@@ -1,0 +1,100 @@
+---
+# ServiceMonitor for EPP metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-d-epp-metrics
+  namespace: llm-d-monitoring  # Monitoring namespace
+  labels:
+    app: llm-d-epp
+    component: metrics
+spec:
+  selector:
+    matchLabels:
+      # This should match the EPP service labels
+      app: llm-d-gaie-epp
+  endpoints:
+  - port: metrics  # Port name in service
+    interval: 30s
+    path: /metrics
+    scheme: http
+    # Add authorization if needed
+    # bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    # tlsConfig:
+    #   insecureSkipVerify: true
+---
+# ServiceMonitor for vLLM decode services
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: llm-d-vllm-metrics
+  namespace: llm-d-monitoring
+  labels:
+    app: llm-d-vllm
+    component: metrics
+spec:
+  namespaceSelector:
+    matchNames:
+    - llm-d
+  selector:
+    matchLabels:
+      app: ms-llm-d-modelservice-decode
+  endpoints:
+  - port: http  # vLLM service port name
+    interval: 30s
+    path: /metrics
+    scheme: http
+---
+# RBAC for ServiceMonitor to access metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: llm-d-metrics-reader
+rules:
+- apiGroups: [""]
+  resources: ["services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: llm-d-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: llm-d-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: llm-d-monitoring
+---
+# Additional ClusterRole for EPP service account to read its own metrics
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: llm-d-epp-metrics-reader
+rules:
+- nonResourceURLs: ["/metrics"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get"]
+  resourceNames: ["llm-d-gaie-epp"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: llm-d-epp-metrics-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: llm-d-epp-metrics-reader
+subjects:
+- kind: ServiceAccount
+  name: llm-d-gaie-epp
+  namespace: llm-d

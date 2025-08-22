@@ -1,12 +1,12 @@
 apiVersion: networking.istio.io/v1alpha3
 kind: EnvoyFilter
 metadata:
-  name: epp-ext-proc
+  name: llm-d-epp-ext-proc
   namespace: llm-d
 spec:
   workloadSelector:
     labels:
-      app.kubernetes.io/gateway: llm-d-infra-inference-gateway
+      gateway.networking.k8s.io/gateway-name: llm-d-infra-inference-gateway
   configPatches:
   - applyTo: CLUSTER
     match:
@@ -14,7 +14,7 @@ spec:
     patch:
       operation: ADD
       value:
-        name: epp-ext-proc-cluster
+        name: llm-d-epp-ext-proc-cluster
         type: STRICT_DNS
         connect_timeout: 2s
         lb_policy: ROUND_ROBIN
@@ -23,13 +23,13 @@ spec:
           auto_sni: false
           auto_san_validation: false
         load_assignment:
-          cluster_name: epp-ext-proc-cluster
+          cluster_name: llm-d-epp-ext-proc-cluster
           endpoints:
           - lb_endpoints:
             - endpoint:
                 address:
                   socket_address:
-                    address: ms-llm-d-modelservice-epp.llm-d.svc.cluster.local
+                    address: llm-d-gaie-epp.llm-d.svc.cluster.local
                     port_value: 9002
   - applyTo: HTTP_FILTER
     match:
@@ -44,15 +44,14 @@ spec:
         name: envoy.filters.http.ext_proc
         typed_config:
           '@type': type.googleapis.com/envoy.extensions.filters.http.ext_proc.v3.ExternalProcessor
+          failure_mode_allow: true
           grpc_service:
             envoy_grpc:
-              cluster_name: epp-ext-proc-cluster
-            timeout: 60s
-          message_timeout: 60s
-          failure_mode_allow: true
+              cluster_name: llm-d-epp-ext-proc-cluster
+            timeout: 30s
+          message_timeout: 30s
           processing_mode:
             request_header_mode: SEND
-            request_body_mode: BUFFERED
             response_header_mode: SEND
-            response_body_mode: BUFFERED
-
+            request_body_mode: NONE
+            response_body_mode: NONE

@@ -1,17 +1,17 @@
-apiVersion: inference.networking.x-k8s.io/v1alpha1
+apiVersion: inference.networking.x-k8s.io/v1alpha2
 kind: InferencePool
 metadata:
   name: llm-d
   namespace: llm-d
 spec:
   selector:
-    matchLabels:
-      llm-d.ai/inferenceServing: "true"
-      llm-d.ai/role: decode
+    llm-d.ai/inferenceServing: "true"
+    llm-d.ai/role: decode
+  targetPortNumber: 8000
   extensionRef:
     name: llama-3-2-3b-instruct
 ---
-apiVersion: inference.networking.x-k8s.io/v1alpha1
+apiVersion: inference.networking.x-k8s.io/v1alpha2
 kind: InferenceModel
 metadata:
   name: llama-3-2-3b-instruct

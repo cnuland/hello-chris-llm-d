@@ -788,6 +788,240 @@
       ],
       "title": "End-to-End Request Latency",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "**EPP Pool Health** shows the status of the inference pool managed by the External Processing Pod (EPP). This includes the number of ready decode pods and their average queue sizes for intelligent routing decisions.\n\n• **Ready Pods**: Number of healthy decode pods available for routing\n• **Average Queue Size**: Current load across all decode pods\n\nValues help assess EPP's routing capacity and load distribution.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "Count",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Average Queue Size"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": ["lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "inference_pool_ready_pods{name=\"llm-d-gaie\"}",
+          "interval": "",
+          "legendFormat": "Ready Pods",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "inference_pool_average_queue_size{name=\"llm-d-gaie\"}",
+          "interval": "",
+          "legendFormat": "Average Queue Size",
+          "refId": "B"
+        }
+      ],
+      "title": "EPP Pool Health & Load",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "**EPP KV Cache Pool Utilization** shows the cache efficiency managed by the External Processing Pod across the inference pool. This metric indicates how well the EPP is utilizing available KV cache memory for intelligent routing.\n\n• **Low (<10%)**: Underutilized cache capacity\n• **Moderate (10-60%)**: Good cache usage\n• **High (>60%)**: High cache efficiency\n\nHigher utilization typically correlates with better cache-aware routing performance.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 1,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.1
+              },
+              {
+                "color": "green",
+                "value": 0.6
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 11,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "inference_pool_average_kv_cache_utilization{name=\"llm-d-gaie\"}",
+          "interval": "",
+          "legendFormat": "Pool KV Cache Utilization",
+          "refId": "A"
+        }
+      ],
+      "title": "EPP KV Cache Pool Utilization",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "**Per-Pod Queue Sizes (EPP View)** shows the queue depth for each individual decode pod as seen by the EPP. This provides insight into how evenly the EPP distributes load and identifies any routing imbalances.\n\n• **Even distribution**: Good EPP routing logic\n• **Uneven bars**: Potential routing optimization opportunities\n• **High values**: Pods under heavy load\n\nThe EPP uses this data for intelligent load-based routing decisions.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 12,
+      "options": {
+        "displayMode": "basic",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "inference_pool_per_pod_queue_size{name=\"llm-d-gaie\"}",
+          "interval": "",
+          "legendFormat": "Pod {{model_server_pod}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Per-Pod Queue Sizes (EPP View)",
+      "type": "bargauge"
     }
   ],
   "refresh": "5s",

@@ -1,50 +1,165 @@
-# Simple Makefile for demo install/uninstall helpers
+# Production-ready LLM-D Installation Makefile
+# Follows official community best practices for out-of-box experience
 
 NS ?= llm-d
 RELEASE ?= llm-d-infra
 GATEWAY_CLASS ?= istio
+HF_TOKEN ?= $(shell echo $$HF_TOKEN)
 
-.PHONY: help demo uninstall infra infra-uninstall infra-status
+.PHONY: help install-all infra llm-d test status clean
+.PHONY: infra-uninstall validate tekton tekton-run monitoring
 
 help:
-	@echo "Targets:"
-	@echo "  infra           - Install/upgrade llm-d-infra Helm chart (MANDATED PATH)"
-	@echo "  infra-uninstall - Uninstall llm-d-infra Helm release"
-	@echo "  infra-status    - Show Helm release status"
-	@echo "  assets          - Apply LLM-D assets (HTTPRoute, EnvoyFilters, decode svc/deploy)"
-	@echo "  tekton          - Apply Tekton validator pipeline/tasks and start a run"
-	@echo "  tekton-run      - Start a new cache-hit PipelineRun"
-	@echo "  demo            - Legacy demo installer (if scripts/make-demo.sh exists)"
-	@echo "  uninstall       - Legacy demo uninstaller (if scripts/make-demo-uninstall.sh exists)"
-	@echo "Variables:"
-	@echo "  NS=\u003cnamespace\u003e (default: llm-d)"
-	@echo "  RELEASE=\u003chelm release name\u003e (default: llm-d-infra)"
-	@echo "  GATEWAY_CLASS=\u003ckgateway|istio|gke-l7-regional-external-managed\u003e (default: istio)"
-	@echo "  HF_TOKEN available in env to seed llm-d-hf-token (optional)"
+	@echo "🚀 LLM-D Production Installation Commands"
+	@echo ""
+	@echo "📦 Primary Commands:"
+	@echo "  install-all     - Complete installation (infra + llm-d + test)"
+	@echo "  infra          - Install infrastructure (Gateway, HTTPRoute)"
+	@echo "  llm-d          - Install LLM-D components (EPP, decode services)"
+	@echo "  test           - Run cache-hit validation test"
+	@echo "  status         - Check deployment status"
+	@echo "  clean          - Remove all components"
+	@echo ""
+	@echo "🔧 Utility Commands:"
+	@echo "  validate       - Run Tekton validation pipeline"
+	@echo "  monitoring     - Deploy monitoring stack (Prometheus, Grafana)"
+	@echo "  tekton-run     - Start new cache-hit test"
+	@echo ""
+	@echo "📋 Environment Variables:"
+	@echo "  NS=<namespace>     (default: llm-d)"
+	@echo "  HF_TOKEN=<token>   (required for model access)"
+	@echo "  GATEWAY_CLASS=<class> (default: istio)"
+	@echo ""
+	@echo "⚠️  Prerequisites:"
+	@echo "  - Istio 1.27.0+ installed"
+	@echo "  - Gateway API CRDs installed"
+	@echo "  - NVIDIA GPU Operator (for GPU acceleration)"
+	@echo "  - HF_TOKEN environment variable set"
 
-# MANDATED installation path: llm-d-infra Helm chart
+# Complete installation workflow
+install-all: infra llm-d test
+	@echo "✅ Complete LLM-D installation finished successfully!"
+	@echo "📊 Cache hit validation results shown above"
+	@echo "🔍 Use 'make status' to monitor ongoing performance"
+
+# Step 1: Install infrastructure (Gateway, HTTPRoute, base services)
 infra:
-	@echo "[infra] Ensuring namespace $(NS) exists" && \
-	kubectl get namespace $(NS) >/dev/null 2>&1 || kubectl create namespace $(NS);
-	@if [ -n "$$HF_TOKEN" ]; then \
-	  echo "[infra] Applying HuggingFace token secret to $(NS)"; \
-	  kubectl -n $(NS) create secret generic llm-d-hf-token --from-literal=HF_TOKEN="$$HF_TOKEN" --dry-run=client -o yaml | kubectl apply -f -; \
+	@echo "📦 [1/4] Installing LLM-D Infrastructure"
+	@echo "🔍 Ensuring namespace $(NS) exists"
+	@kubectl get namespace $(NS) >/dev/null 2>&1 || kubectl create namespace $(NS)
+	@if [ -n "$(HF_TOKEN)" ]; then \
+	  echo "🔑 Creating HuggingFace token secret"; \
+	  kubectl -n $(NS) create secret generic llm-d-hf-token --from-literal=HF_TOKEN="$(HF_TOKEN)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null; \
 	else \
-	  echo "[infra] HF_TOKEN not set; proceeding without creating/updating llm-d-hf-token secret"; \
+	  echo "⚠️  HF_TOKEN not set - model access may fail"; \
 	fi
-	@echo "[infra] Adding Helm repos" && \
-	helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true; \
-	helm repo add llm-d-infra https://llm-d-incubation.github.io/llm-d-infra/ >/dev/null 2>&1 || true; \
-	helm repo update >/dev/null
-	@echo "[infra] Installing/upgrading release $(RELEASE) in namespace $(NS) with gatewayClass=$(GATEWAY_CLASS)" && \
-	helm upgrade -i $(RELEASE) llm-d-infra/llm-d-infra -n $(NS) --create-namespace --set gateway.gatewayClassName=$(GATEWAY_CLASS)
+	@echo "📥 Adding Helm repositories"
+	@helm repo add llm-d-infra https://llm-d-incubation.github.io/llm-d-infra/ >/dev/null 2>&1 || true
+	@helm repo update >/dev/null 2>&1
+	@echo "⚙️  Installing infrastructure Helm chart ($(RELEASE))"
+	@helm upgrade -i $(RELEASE) llm-d-infra/llm-d-infra -n $(NS) \
+	  --create-namespace \
+	  --set gateway.gatewayClassName=$(GATEWAY_CLASS) \
+	  --timeout=10m >/dev/null
+	@echo "✅ Infrastructure installation complete"
+	@echo "🔍 Verifying gateway status..."
+	@kubectl get gateway -n $(NS) -o custom-columns=NAME:.metadata.name,PROGRAMMED:.status.conditions[0].status 2>/dev/null || echo "⚠️  Gateway status check failed - may still be initializing"
 
+# Step 2: Install LLM-D components (EPP, decode services, EnvoyFilters)
+llm-d:
+	@echo "🚀 [2/4] Installing LLM-D Components"
+	@echo "📦 Applying decode services and deployment"
+	@kubectl apply -n $(NS) -f assets/llm-d/decode-service.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/llm-d/decode-deployment.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/llm-d/httproute.yaml >/dev/null
+	@echo "🧠 Installing EPP (External Processing Pod) for cache-aware routing"
+	@kubectl apply -n $(NS) -f assets/llm-d/epp.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/inference-crs.yaml >/dev/null
+	@echo "🔗 Configuring Istio EnvoyFilters for intelligent routing"
+	@kubectl apply -n $(NS) -f assets/envoyfilter-epp.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-access-logs.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/gateway-session-header-normalize.yaml >/dev/null
+	@kubectl apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml >/dev/null
+	@echo "⚙️  Updating DestinationRule for session consistency"
+	@kubectl -n $(NS) patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' >/dev/null 2>&1 || true
+	@echo "🔄 Restarting gateway to apply configuration changes"
+	@kubectl -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio >/dev/null
+	@kubectl -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s >/dev/null
+	@echo "⏳ Waiting for services to be ready (this may take 5-10 minutes for GPU model loading)"
+	@echo "   - Decode services loading models on GPU..."
+	@kubectl rollout status deploy/ms-llm-d-modelservice-decode -n $(NS) --timeout=600s >/dev/null || echo "⚠️  Decode deployment timeout - check logs: kubectl logs -n $(NS) -l app=ms-llm-d-modelservice-decode"
+	@echo "   - EPP service starting..."
+	@kubectl rollout status deploy/ms-llm-d-modelservice-epp -n $(NS) --timeout=300s >/dev/null || echo "⚠️  EPP deployment timeout - check logs: kubectl logs -n $(NS) -l app=ms-llm-d-modelservice-epp"
+	@echo "✅ LLM-D components installation complete"
+
+# Step 3: Run validation test
+test:
+	@echo "🧪 [3/4] Running Cache-Hit Validation Test"
+	@echo "📊 Starting Tekton pipeline for cache performance validation..."
+	@kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
+	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@echo "📈 Streaming test results (Ctrl-C to stop):"
+	@echo ""
+	@tkn pipelinerun logs -n $(NS) --last -f --all || echo "⚠️  Tekton CLI not available - check results manually: kubectl logs -n $(NS) -l tekton.dev/pipelineRun"
+
+# Check deployment status
+status:
+	@echo "📊 LLM-D Deployment Status"
+	@echo ""
+	@echo "🏗️  Infrastructure:"
+	@kubectl get gateway,httproute -n $(NS) -o custom-columns=KIND:.kind,NAME:.metadata.name,STATUS:.status.conditions[0].status 2>/dev/null || echo "No gateway resources found"
+	@echo ""
+	@echo "🚀 LLM-D Components:"
+	@kubectl get pods -n $(NS) -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount 2>/dev/null || echo "No pods found in namespace $(NS)"
+	@echo ""
+	@echo "💾 GPU Resources:"
+	@kubectl describe nodes -l nvidia.com/gpu.present=true | grep -E "nvidia.com/gpu|Allocated resources" | head -10 || echo "No GPU resources found"
+	@echo ""
+	@echo "📈 Recent Cache Performance:"
+	@echo "Use 'make test' to run new validation or check Grafana dashboards"
+
+# Deploy monitoring stack (optional)
+monitoring:
+	@echo "📊 Deploying Monitoring Stack"
+	@kubectl apply -n $(NS) -f monitoring/ >/dev/null
+	@echo "✅ Monitoring deployed - access Grafana via the route created in monitoring/"
+
+# Run new validation test
+tekton-run:
+	@echo "🧪 Starting New Cache-Hit Test"
+	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@echo "📊 Stream results: tkn pipelinerun logs -n $(NS) --last -f --all"
+
+# Full validation with detailed output
+validate:
+	@echo "🔬 Running Detailed Validation"
+	@kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
+	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@echo "📈 Detailed validation results:"
+	@tkn pipelinerun logs -n $(NS) --last -f --all
+
+# Clean installation (removes everything)
+clean:
+	@echo "🧹 Cleaning LLM-D Installation"
+	@echo "⚠️  This will remove ALL LLM-D components from namespace $(NS)"
+	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
+	@echo "🗑️  Removing LLM-D assets"
+	@kubectl delete -n $(NS) -f assets/llm-d/ --ignore-not-found=true >/dev/null 2>&1 || true
+	@kubectl delete -n $(NS) -f assets/envoyfilter-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@kubectl delete -n $(NS) -f assets/gateway-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@kubectl delete -n $(NS) -f assets/inference-crs.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@echo "🏗️  Removing infrastructure Helm release"
+	@helm uninstall $(RELEASE) -n $(NS) >/dev/null 2>&1 || true
+	@echo "🗑️  Removing Tekton assets"
+	@kubectl delete -n $(NS) -f assets/cache-aware/tekton/ --ignore-not-found=true >/dev/null 2>&1 || true
+	@echo "✅ Clean complete - namespace $(NS) ready for fresh installation"
+
+# Legacy compatibility (deprecated)
 infra-uninstall:
-	@echo "[infra] Uninstalling release $(RELEASE) from namespace $(NS)" 66 \
-	helm uninstall $(RELEASE) -n $(NS) || true
-
-infra-status:
-	@helm status $(RELEASE) -n $(NS) || true
+	@echo "⚠️  Deprecated: Use 'make clean' for complete removal"
+	@helm uninstall $(RELEASE) -n $(NS) || true
 
 assets:
 	@echo "[assets] Applying LLM-D assets to $(NS)" && \
@@ -78,10 +193,6 @@ tekton:
 	kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml
 	@echo "[tekton] To stream logs: tkn pipelinerun logs -n $(NS) --last -f --all"
 
-tekton-run:
-	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml && \
-	echo "[tekton] Run created. Stream: tkn pipelinerun logs -n $(NS) --last -f --all"
-
 # Apply only the session stickiness tuning knobs (DestinationRule + Envoy/Lua override)
 .PHONY: tune-stickiness
 tune-stickiness:
@@ -94,14 +205,6 @@ tune-stickiness:
 		&& echo "[tune] Restarting gateway to pick up filters"
 	kubectl -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio && \
 	kubectl -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=120s
-
-# Validate: run the cache-hit pipeline and stream logs
-.PHONY: validate
-validate:
-	@kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml && \
-	kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml && \
-	echo "[validate] Streaming logs (Ctrl-C to stop)…" && \
-	tkn pipelinerun logs -n $(NS) --last -f --all
 
 # Roll back stickiness tuning (remove DestinationRule)
 .PHONY: rollback-stickiness

@@ -124,27 +124,35 @@ data:
         action: keep
         regex: 'metrics|admin'
         
-    - job_name: 'gateway-api-inference-extension'
+    - job_name: 'llm-d-epp-metrics'
       kubernetes_sd_configs:
       - role: endpoints
         namespaces:
           names:
           - llm-d
+      scheme: http
+      bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
       relabel_configs:
       - source_labels: [__meta_kubernetes_service_name]
         action: keep
-        regex: '.*-epp-service'
+        regex: 'llm-d-gaie-epp'
       - source_labels: [__meta_kubernetes_endpoint_port_name]
         action: keep
-        regex: 'metrics'
+        regex: 'http-metrics'
       - source_labels: [__address__]
         action: replace
         regex: '([^:]+):.*'
         replacement: '${1}:9090'
         target_label: __address__
-      - source_labels: [__meta_kubernetes_service_label_llm_d_ai_epp]
+      - source_labels: [__meta_kubernetes_service_name]
         action: replace
-        target_label: inference_extension
+        target_label: service
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
         
     - job_name: 'llm-d-components'
       kubernetes_sd_configs:
@@ -221,4 +229,40 @@ data:
         annotations:
           summary: llm-d scheduler is down
           description: "llm-d scheduler instance {{ $labels.instance }} is not responding"
+          
+      - alert: EPPUnhealthy
+        expr: up{job="llm-d-epp-metrics"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: EPP (External Processing Pod) is down
+          description: "EPP instance {{ $labels.instance }} is not responding"
+          
+      - alert: EPPLowKVCacheUtilization
+        expr: inference_pool_average_kv_cache_utilization < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low KV cache utilization in inference pool
+          description: "KV cache utilization is {{ $value | humanizePercentage }} for pool {{ $labels.name }}"
+          
+      - alert: EPPNoReadyPods
+        expr: inference_pool_ready_pods == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: No ready pods in inference pool
+          description: "Inference pool {{ $labels.name }} has no ready pods available"
+          
+      - alert: EPPHighQueueSize
+        expr: inference_pool_average_queue_size > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: High average queue size in inference pool
+          description: "Average queue size is {{ $value }} for pool {{ $labels.name }}"
 
