@@ -324,7 +324,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "sum(vllm:gpu_prefix_cache_hits_total{model_name=~\"$model\", namespace=~\"$namespace\"}) / sum(vllm:gpu_prefix_cache_queries_total{model_name=~\"$model\", namespace=~\"$namespace\"}) * 100",
+          "expr": "sum(vllm:gpu_prefix_cache_hits_total{model_name=~\"$model\", namespace=~\"$namespace\", instance=~\".*:8200\", job=\"kubernetes-pods\"}) / sum(vllm:gpu_prefix_cache_queries_total{model_name=~\"$model\", namespace=~\"$namespace\", instance=~\".*:8200\", job=\"kubernetes-pods\"})",
           "interval": "",
           "legendFormat": "Overall Cache Hit Rate",
           "range": true,
@@ -408,7 +408,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "editorMode": "code",
-          "expr": "vllm:gpu_prefix_cache_hits_total{model_name=~\"$model\", namespace=~\"$namespace\"} / vllm:gpu_prefix_cache_queries_total{model_name=~\"$model\", namespace=~\"$namespace\"} * 100\n",
+          "expr": "vllm:gpu_prefix_cache_hits_total{model_name=~\"$model\", namespace=~\"$namespace\", instance=~\".*:8200\", job=\"kubernetes-pods\"} / vllm:gpu_prefix_cache_queries_total{model_name=~\"$model\", namespace=~\"$namespace\", instance=~\".*:8200\", job=\"kubernetes-pods\"} \n",
           "interval": "",
           "legendFormat": "Pod {{pod}}",
           "range": true,
