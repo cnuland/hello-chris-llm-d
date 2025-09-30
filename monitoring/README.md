@@ -22,7 +22,13 @@ This directory contains example monitoring configuration you can adapt for your 
 # Deploy Grafana and Prometheus (optional)
 kubectl create namespace llm-d-monitoring || true
 kubectl apply -f monitoring/grafana.yaml
+kubectl apply -f monitoring/grafana-service.yaml
 kubectl apply -f monitoring/prometheus.yaml
+kubectl apply -f monitoring/grafana-datasources.yaml
+kubectl apply -f monitoring/grafana-dashboards-config.yaml
+kubectl apply -f monitoring/grafana-config.yaml
+kubectl apply -f monitoring/prometheus-config.yaml
+kubectl create configmap grafana-dashboard-llm-performance --from-file=monitoring/grafana-dashboard-llm-performance.json -n  llm-d-monitoring --dry-run=client -o yaml | oc replace -f -
 ```
 
 ### **Access Dashboards**
