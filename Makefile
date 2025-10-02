@@ -46,10 +46,10 @@ install-all: infra llm-d test
 infra:
 	@echo "📦 [1/4] Installing LLM-D Infrastructure"
 	@echo "🔍 Ensuring namespace $(NS) exists"
-	@kubectl get namespace $(NS) >/dev/null 2>&1 || kubectl create namespace $(NS)
+	@oc get namespace $(NS) >/dev/null 2>&1 || oc create namespace $(NS)
 	@if [ -n "$(HF_TOKEN)" ]; then \
 	  echo "🔑 Creating HuggingFace token secret"; \
-	  kubectl -n $(NS) create secret generic llm-d-hf-token --from-literal=HF_TOKEN="$(HF_TOKEN)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null; \
+	  oc -n $(NS) create secret generic llm-d-hf-token --from-literal=HF_TOKEN="$(HF_TOKEN)" --dry-run=client -o yaml | oc apply -f - >/dev/null; \
 	else \
 	  echo "⚠️  HF_TOKEN not set - model access may fail"; \
 	fi
@@ -63,59 +63,59 @@ infra:
 	  --timeout=10m >/dev/null
 	@echo "✅ Infrastructure installation complete"
 	@echo "🔍 Verifying gateway status..."
-	@kubectl get gateway -n $(NS) -o custom-columns=NAME:.metadata.name,PROGRAMMED:.status.conditions[0].status 2>/dev/null || echo "⚠️  Gateway status check failed - may still be initializing"
+	@oc get gateway -n $(NS) -o custom-columns=NAME:.metadata.name,PROGRAMMED:.status.conditions[0].status 2>/dev/null || echo "⚠️  Gateway status check failed - may still be initializing"
 
 # Step 2: Install LLM-D components (EPP, decode services, EnvoyFilters)
 llm-d:
 	@echo "🚀 [2/4] Installing LLM-D Components"
 	@echo "📦 Applying decode services and deployment"
-	@kubectl apply -n $(NS) -f assets/llm-d/decode-service.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/llm-d/decode-deployment.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/llm-d/httproute.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/llm-d/decode-service.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/llm-d/decode-deployment.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/llm-d/httproute.yaml >/dev/null
 	@echo "🧠 Installing EPP (External Processing Pod) for cache-aware routing"
-	@kubectl apply -n $(NS) -f assets/llm-d/epp.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/inference-crs.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/llm-d/epp.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/inference-crs.yaml >/dev/null
 	@echo "🔗 Configuring Istio EnvoyFilters for intelligent routing"
-	@kubectl apply -n $(NS) -f assets/envoyfilter-epp.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-access-logs.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/gateway-session-header-normalize.yaml >/dev/null
-	@kubectl apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/envoyfilter-epp.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/envoyfilter-gateway-access-logs.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/gateway-session-header-normalize.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml >/dev/null
 	@echo "⚙️  Updating DestinationRule for session consistency"
-	@kubectl -n $(NS) patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' >/dev/null 2>&1 || true
+	@oc -n $(NS) patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' >/dev/null 2>&1 || true
 	@echo "🔄 Restarting gateway to apply configuration changes"
-	@kubectl -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio >/dev/null
-	@kubectl -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s >/dev/null
+	@oc -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio >/dev/null
+	@oc -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s >/dev/null
 	@echo "⏳ Waiting for services to be ready (this may take 5-10 minutes for GPU model loading)"
 	@echo "   - Decode services loading models on GPU..."
-	@kubectl rollout status deploy/ms-llm-d-modelservice-decode -n $(NS) --timeout=600s >/dev/null || echo "⚠️  Decode deployment timeout - check logs: kubectl logs -n $(NS) -l app=ms-llm-d-modelservice-decode"
+	@oc rollout status deploy/ms-llm-d-modelservice-decode -n $(NS) --timeout=600s >/dev/null || echo "⚠️  Decode deployment timeout - check logs: oc logs -n $(NS) -l app=ms-llm-d-modelservice-decode"
 	@echo "   - EPP service starting..."
-	@kubectl rollout status deploy/ms-llm-d-modelservice-epp -n $(NS) --timeout=300s >/dev/null || echo "⚠️  EPP deployment timeout - check logs: kubectl logs -n $(NS) -l app=ms-llm-d-modelservice-epp"
+	@oc rollout status deploy/ms-llm-d-modelservice-epp -n $(NS) --timeout=300s >/dev/null || echo "⚠️  EPP deployment timeout - check logs: oc logs -n $(NS) -l app=ms-llm-d-modelservice-epp"
 	@echo "✅ LLM-D components installation complete"
 
 # Step 3: Run validation test
 test:
 	@echo "🧪 [3/4] Running Cache-Hit Validation Test"
 	@echo "📊 Starting Tekton pipeline for cache performance validation..."
-	@kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
-	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
+	@oc create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
 	@echo "📈 Streaming test results (Ctrl-C to stop):"
 	@echo ""
-	@tkn pipelinerun logs -n $(NS) --last -f --all || echo "⚠️  Tekton CLI not available - check results manually: kubectl logs -n $(NS) -l tekton.dev/pipelineRun"
+	@tkn pipelinerun logs -n $(NS) --last -f --all || echo "⚠️  Tekton CLI not available - check results manually: oc logs -n $(NS) -l tekton.dev/pipelineRun"
 
 # Check deployment status
 status:
 	@echo "📊 LLM-D Deployment Status"
 	@echo ""
 	@echo "🏗️  Infrastructure:"
-	@kubectl get gateway,httproute -n $(NS) -o custom-columns=KIND:.kind,NAME:.metadata.name,STATUS:.status.conditions[0].status 2>/dev/null || echo "No gateway resources found"
+	@oc get gateway,httproute -n $(NS) -o custom-columns=KIND:.kind,NAME:.metadata.name,STATUS:.status.conditions[0].status 2>/dev/null || echo "No gateway resources found"
 	@echo ""
 	@echo "🚀 LLM-D Components:"
-	@kubectl get pods -n $(NS) -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount 2>/dev/null || echo "No pods found in namespace $(NS)"
+	@oc get pods -n $(NS) -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount 2>/dev/null || echo "No pods found in namespace $(NS)"
 	@echo ""
 	@echo "💾 GPU Resources:"
-	@kubectl describe nodes -l nvidia.com/gpu.present=true | grep -E "nvidia.com/gpu|Allocated resources" | head -10 || echo "No GPU resources found"
+	@oc describe nodes -l nvidia.com/gpu.present=true | grep -E "nvidia.com/gpu|Allocated resources" | head -10 || echo "No GPU resources found"
 	@echo ""
 	@echo "📈 Recent Cache Performance:"
 	@echo "Use 'make test' to run new validation or check Grafana dashboards"
@@ -123,20 +123,20 @@ status:
 # Deploy monitoring stack (optional)
 monitoring:
 	@echo "📊 Deploying Monitoring Stack"
-	@kubectl apply -n $(NS) -f monitoring/ >/dev/null
+	@oc apply -n $(NS) -f monitoring/ >/dev/null
 	@echo "✅ Monitoring deployed - access Grafana via the route created in monitoring/"
 
 # Run new validation test
 tekton-run:
 	@echo "🧪 Starting New Cache-Hit Test"
-	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@oc create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
 	@echo "📊 Stream results: tkn pipelinerun logs -n $(NS) --last -f --all"
 
 # Full validation with detailed output
 validate:
 	@echo "🔬 Running Detailed Validation"
-	@kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
-	@kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
+	@oc apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml >/dev/null
+	@oc create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml >/dev/null
 	@echo "📈 Detailed validation results:"
 	@tkn pipelinerun logs -n $(NS) --last -f --all
 
@@ -146,14 +146,14 @@ clean:
 	@echo "⚠️  This will remove ALL LLM-D components from namespace $(NS)"
 	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = "y" ] || exit 1
 	@echo "🗑️  Removing LLM-D assets"
-	@kubectl delete -n $(NS) -f assets/llm-d/ --ignore-not-found=true >/dev/null 2>&1 || true
-	@kubectl delete -n $(NS) -f assets/envoyfilter-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
-	@kubectl delete -n $(NS) -f assets/gateway-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
-	@kubectl delete -n $(NS) -f assets/inference-crs.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@oc delete -n $(NS) -f assets/llm-d/ --ignore-not-found=true >/dev/null 2>&1 || true
+	@oc delete -n $(NS) -f assets/envoyfilter-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@oc delete -n $(NS) -f assets/gateway-*.yaml --ignore-not-found=true >/dev/null 2>&1 || true
+	@oc delete -n $(NS) -f assets/inference-crs.yaml --ignore-not-found=true >/dev/null 2>&1 || true
 	@echo "🏗️  Removing infrastructure Helm release"
 	@helm uninstall $(RELEASE) -n $(NS) >/dev/null 2>&1 || true
 	@echo "🗑️  Removing Tekton assets"
-	@kubectl delete -n $(NS) -f assets/cache-aware/tekton/ --ignore-not-found=true >/dev/null 2>&1 || true
+	@oc delete -n $(NS) -f assets/cache-aware/tekton/ --ignore-not-found=true >/dev/null 2>&1 || true
 	@echo "✅ Clean complete - namespace $(NS) ready for fresh installation"
 
 # Legacy compatibility (deprecated)
@@ -163,54 +163,54 @@ infra-uninstall:
 
 assets:
 	@echo "[assets] Applying LLM-D assets to $(NS)" && \
-	kubectl apply -n $(NS) -f assets/llm-d/decode-service.yaml && \
-	kubectl apply -n $(NS) -f assets/llm-d/decode-deployment.yaml && \
-	kubectl apply -n $(NS) -f assets/llm-d/httproute.yaml && \
+	oc apply -n $(NS) -f assets/llm-d/decode-service.yaml && \
+	oc apply -n $(NS) -f assets/llm-d/decode-deployment.yaml && \
+	oc apply -n $(NS) -f assets/llm-d/httproute.yaml && \
 	# EPP (scheduler) and Inference CRs for KV-cache-aware routing
-	kubectl apply -n $(NS) -f assets/llm-d/epp.yaml && \
-	kubectl apply -n $(NS) -f assets/inference-crs.yaml && \
+	oc apply -n $(NS) -f assets/llm-d/epp.yaml && \
+	oc apply -n $(NS) -f assets/inference-crs.yaml && \
 	# Istio EnvoyFilters (ext-proc + access logs + Lua override + session normalization)
-	kubectl apply -n $(NS) -f assets/envoyfilter-epp.yaml && \
-	kubectl apply -n $(NS) -f assets/envoyfilter-gateway-access-logs.yaml && \
-	kubectl apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml && \
-	kubectl apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml && \
-	kubectl apply -n $(NS) -f assets/gateway-session-header-normalize.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-epp.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-gateway-access-logs.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml && \
+	oc apply -n $(NS) -f assets/gateway-session-header-normalize.yaml && \
 	# DestinationRule with consistent-hash stickiness as a safety net
-	kubectl apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml && \
+	oc apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml && \
 	# Ensure Helm-provisioned DR switches from ROUND_ROBIN to consistentHash on x-session-id
-	kubectl -n $(NS) patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' || true && \
+	oc -n $(NS) patch destinationrule ms-llm-d-modelservice-decode --type=json -p='[{"op":"remove","path":"/spec/trafficPolicy/loadBalancer/simple"},{"op":"add","path":"/spec/trafficPolicy/loadBalancer/consistentHash","value":{"httpHeaderName":"x-session-id","minimumRingSize":4096}}]' || true && \
 	# Restart gateway to ensure new EnvoyFilters are picked up
-	kubectl -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio && \
-	kubectl -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s && \
+	oc -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio && \
+	oc -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=180s && \
 	echo "[assets] Waiting for decode deployment rollout" && \
-	kubectl rollout status deploy/ms-llm-d-modelservice-decode -n $(NS) --timeout=300s && \
+	oc rollout status deploy/ms-llm-d-modelservice-decode -n $(NS) --timeout=300s && \
 	echo "[assets] Waiting for EPP rollout" && \
-	kubectl rollout status deploy/ms-llm-d-modelservice-epp -n $(NS) --timeout=300s
+	oc rollout status deploy/ms-llm-d-modelservice-epp -n $(NS) --timeout=300s
 
 tekton:
 	@echo "[tekton] Applying Tekton cache-hit pipeline/task" && \
-	kubectl apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml && \
-	kubectl create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml
+	oc apply -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipeline.yaml && \
+	oc create -n $(NS) -f assets/cache-aware/tekton/cache-hit-pipelinerun.yaml
 	@echo "[tekton] To stream logs: tkn pipelinerun logs -n $(NS) --last -f --all"
 
 # Apply only the session stickiness tuning knobs (DestinationRule + Envoy/Lua override)
 .PHONY: tune-stickiness
 tune-stickiness:
 	@echo "[tune] Applying DestinationRule and gateway overrides for stickiness" && \
-	kubectl apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml && \
-	kubectl apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml && \
-	kubectl apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml && \
-	kubectl apply -n $(NS) -f assets/gateway-session-header-normalize.yaml \
-		&& kubectl apply -n $(NS) -f assets/gateway-epp-destination-override.yaml \
+	oc apply -n $(NS) -f assets/llm-d/destinationrule-decode.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-gateway-lua-upstream-header.yaml && \
+	oc apply -n $(NS) -f assets/envoyfilter-gateway-add-upstream-header.yaml && \
+	oc apply -n $(NS) -f assets/gateway-session-header-normalize.yaml \
+		&& oc apply -n $(NS) -f assets/gateway-epp-destination-override.yaml \
 		&& echo "[tune] Restarting gateway to pick up filters"
-	kubectl -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio && \
-	kubectl -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=120s
+	oc -n $(NS) rollout restart deploy/llm-d-infra-inference-gateway-istio && \
+	oc -n $(NS) rollout status deploy/llm-d-infra-inference-gateway-istio --timeout=120s
 
 # Roll back stickiness tuning (remove DestinationRule)
 .PHONY: rollback-stickiness
 rollback-stickiness:
 	@echo "[rollback] Removing DestinationRule-based stickiness" && \
-	kubectl -n $(NS) delete destinationrule ms-llm-d-modelservice-decode-session-affinity --ignore-not-found=true
+	oc -n $(NS) delete destinationrule ms-llm-d-modelservice-decode-session-affinity --ignore-not-found=true
 
 # Legacy helpers (kept for backwards compatibility)
 # Keeps existing install flow if you already have scripts/make-demo.sh
