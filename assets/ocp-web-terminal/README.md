@@ -41,7 +41,7 @@ $(wtoctl | grep 'oc delete')
 Check cli utils
 
 ```sh
-bin_check kubectl
+# bin_check kubectl
 bin_check helm
 bin_check oc
 bin_check tkn
@@ -66,7 +66,7 @@ Create GPU MachineSet
 
 ```sh
 # setup machineset
-ocp_aws_machineset_create_gpu p5-4xlarge
+ocp_aws_machineset_create_gpu g5-xlarge
 ocp_aws_machineset_create_gpu p4d.24xlarge
 ```
 
