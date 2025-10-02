@@ -13,7 +13,6 @@
 
 ---
 
-
 ## NVIDIA GPU Operator Setup (for GPU-accelerated inference)
 
 To run LLM-D with GPU acceleration, you'll need to install and configure the NVIDIA GPU Operator on your OpenShift/Kubernetes cluster. This section provides step-by-step instructions based on a successful deployment.
@@ -199,20 +198,22 @@ For p4d.24xlarge instances:
 
 **1. Cluster Requirements:**
 
-- OpenShift 4.16+ or Kubernetes 1.28+ 
+- OpenShift 4.16+ or Kubernetes 1.28+
 - GPU nodes with NVIDIA GPU Operator installed (see section above)
 - Cluster admin privileges
 
 **2. Required Tools:**
+
 ```bash
 # Verify these tools are installed:
-kubectl version --client
+kubectl version --client # Optional
 helm version 
 oc version  # For OpenShift
 tkn version  # Tekton CLI (for testing)
 ```
 
 **3. Environment Setup:**
+
 ```bash
 # Required: Set your Hugging Face token for model access
 export HF_TOKEN="hf_your_actual_token_here"
@@ -268,10 +269,10 @@ oc apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/r
 
 ```bash
 # Should show gateway, httproute, and inference CRDs
-kubectl get crd | grep -E "(gateway|inference)"
+oc get crd | grep -E "(gateway|inference)"
 
 # Should show "istio" GatewayClass available
-kubectl get gatewayclass
+oc get gatewayclass
 ```
 
 #### Step 3: Install LLM-D Infrastructure
@@ -281,7 +282,7 @@ kubectl get gatewayclass
 make infra NS=llm-d GATEWAY_CLASS=istio
 
 # Verify gateway is programmed
-kubectl get gateway -n llm-d
+oc get gateway -n llm-d
 # Should show: PROGRAMMED=True
 ```
 
@@ -347,7 +348,7 @@ make test NS=$NS
 ### ⚠️ DO NOT Use These (Deprecated/Incompatible)
 
 - ❌ **OpenShift Service Mesh**: Based on older Istio, lacks Gateway API Inference Extension
-- ❌ **LLM-D Operator**: Outdated and not maintained 
+- ❌ **LLM-D Operator**: Outdated and not maintained
 - ❌ **Manual Kubernetes Manifests**: Configuration loading issues, use official Helm charts
 - ❌ **kGateway**: This demo is optimized for Istio integration
 
@@ -365,14 +366,14 @@ After successful installation, you should see:
 - **Throughput**: Optimized based on EPP intelligent routing
 
 **Infrastructure Status:**
+
 ```bash
-kubectl get pods -n llm-d
+oc get pods -n llm-d
 # Should show all pods Running:
 # - llm-d-gaie-epp-*: 1/1 Running (EPP)
 # - ms-llm-d-modelservice-decode-*: 3/3 Running (GPU inference)
 # - llm-d-infra-inference-gateway-*: 1/1 Running (Istio gateway)
 ```
-
 
 ## Architecture (overview)
 
@@ -398,7 +399,6 @@ Why it works
 - All policy is centralized in EPP; the data plane remains simple
 
 For a deeper technical outline (design rationale, metrics, demo flow), see the blog posts in blog/ (do not modify them here).
-
 
 ## Monitoring
 
@@ -430,7 +430,6 @@ Files of record
   - monitoring/grafana-dashboard-llm-performance.json (dashboard)
   - monitoring/grafana-service.yaml (Service + OpenShift Route)
 
-
 ## Repository Layout (selected)
 
 - deploy.sh: single command installer and validator for the Istio + EPP demo
@@ -439,13 +438,11 @@ Files of record
 - monitoring/: optional monitoring assets (Grafana dashboards, configs)
 - llm-d-infra/: upstream infrastructure (optional), not required for this demo path
 
-
 ## Notes and expectations
 
 - Metrics and routes: some names/hosts are environment-specific; update to your cluster
 - Secrets/tokens: this repo does not include real secrets. Configure any required tokens (e.g., HF) as Kubernetes Secrets in your cluster
 - GPU requirement: for real model inference, deploy onto GPU nodes with NVIDIA GPU Operator installed (see "NVIDIA GPU Operator Setup" section above); otherwise, deploy the stack and test the control-plane paths only
-
 
 ## Links
 
@@ -453,4 +450,3 @@ Files of record
 - Troubleshooting: monitoring/README.md for monitoring-specific steps
 - Advanced architecture details: assets/cache-aware/docs/ARCHITECTURE.md
 - Metrics details: assets/cache-aware/docs/METRICS.md
-
