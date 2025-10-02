@@ -66,7 +66,7 @@ Create GPU MachineSet
 
 ```sh
 # setup machineset
-ocp_aws_machineset_create_gpu g5-xlarge
+ocp_aws_machineset_create_gpu g5.4xlarge
 ocp_aws_machineset_create_gpu p4d.24xlarge
 ```
 
