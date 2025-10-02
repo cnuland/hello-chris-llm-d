@@ -262,7 +262,7 @@ oc get pods -n istio-system
 oc apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.0.0/standard-install.yaml
 
 # Install Gateway API Inference Extension CRDs
-oc apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/latest/download/manifests.yaml
+oc apply -f https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v0.5.1/manifests.yaml
 ```
 
 **Verify Gateway API:**
