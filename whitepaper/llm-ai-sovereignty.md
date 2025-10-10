@@ -83,40 +83,41 @@ We present a design that the **EPP** maintains an *in-memory view* of per-pool c
 ```mermaid
 flowchart LR
   subgraph Client["Client / App"]
+    ClientApp[Client App]
   end
 
-  Client -->|HTTPS| GW_FR[Envoy Gateway (FR)]
-  Client -->|HTTPS| GW_DE[Envoy Gateway (DE)]
-  Client -->|HTTPS| GW_IT[Envoy Gateway (IT)]
+  ClientApp -->|HTTPS| GW_FR["Envoy Gateway (FR)"]
+  ClientApp -->|HTTPS| GW_DE["Envoy Gateway (DE)"]
+  ClientApp -->|HTTPS| GW_IT["Envoy Gateway (IT)"]
 
   subgraph FR_Region["France Region (OpenShift)"]
-    GW_FR -->|ext-proc| EPP_FR
-    EPP_FR -->|route| DEC_FR1[vLLM Decode Pool FR-1]
-    EPP_FR -->|route| DEC_FR2[vLLM Decode Pool FR-2]
+    GW_FR -->|ext-proc| EPP_FR["EPP FR"]
+    EPP_FR -->|route| DEC_FR1["vLLM Decode Pool FR-1"]
+    EPP_FR -->|route| DEC_FR2["vLLM Decode Pool FR-2"]
     DEC_FR1 <-->|sketch| EPP_FR
     DEC_FR2 <-->|sketch| EPP_FR
   end
 
   subgraph DE_Region["Germany Region (OpenShift)"]
-    GW_DE -->|ext-proc| EPP_DE
-    EPP_DE -->|route| DEC_DE1[vLLM Decode Pool DE-1]
-    EPP_DE -->|route| DEC_DE2[vLLM Decode Pool DE-2]
+    GW_DE -->|ext-proc| EPP_DE["EPP DE"]
+    EPP_DE -->|route| DEC_DE1["vLLM Decode Pool DE-1"]
+    EPP_DE -->|route| DEC_DE2["vLLM Decode Pool DE-2"]
     DEC_DE1 <-->|sketch| EPP_DE
     DEC_DE2 <-->|sketch| EPP_DE
   end
 
   subgraph IT_Region["Italy Region (OpenShift)"]
-    GW_IT -->|ext-proc| EPP_IT
-    EPP_IT -->|route| DEC_IT1[vLLM Decode Pool IT-1]
-    EPP_IT -->|route| DEC_IT2[vLLM Decode Pool IT-2]
+    GW_IT -->|ext-proc| EPP_IT["EPP IT"]
+    EPP_IT -->|route| DEC_IT1["vLLM Decode Pool IT-1"]
+    EPP_IT -->|route| DEC_IT2["vLLM Decode Pool IT-2"]
     DEC_IT1 <-->|sketch| EPP_IT
     DEC_IT2 <-->|sketch| EPP_IT
   end
 
   subgraph Shared["Per-Region Artifact Store (Same Model Digest)"]
-    WEIGHTS_FR[(Model Weights FR)]
-    WEIGHTS_DE[(Model Weights DE)]
-    WEIGHTS_IT[(Model Weights IT)]
+    WEIGHTS_FR[("Model Weights FR")]
+    WEIGHTS_DE[("Model Weights DE")]
+    WEIGHTS_IT[("Model Weights IT")]
   end
 
   WEIGHTS_FR --> DEC_FR1
