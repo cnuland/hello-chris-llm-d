@@ -1,16 +1,15 @@
-# Ensuring AI Sovereignty in Hybrid Cloud Inference  
+# Ensuring AI Sovereignty in Distributed Inference  
 ## Preventing Cross-Region Routing, KV-Cache Leakage, and Auditing Gaps with llm-d, vLLM, and OpenShift
 
 **Version:** 1.0  
 **Audience:** Platform architects, SREs, AI infrastructure engineers, compliance and security teams  
-**Style:** CNCF architecture white paper  
 **Date:** October 2025
 
 ---
 
 ## Abstract
 
-As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three common failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design that avoids a central Redis index—relying instead on gateway-side hashing, lightweight per-pool cache sketches, and policy-driven scoring—to deliver *prefix/KV-aware* routing with strong regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
+As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three standard failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design that avoids a central Redis index—relying instead on gateway-side hashing, lightweight per-pool cache sketches, and policy-driven scoring—to deliver *prefix/KV-aware* routing with firm regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
 
 ---
 
@@ -18,7 +17,7 @@ As large language models (LLMs) become critical infrastructure, enterprises and 
 
 Governments and regulated industries increasingly require that AI systems respect jurisdictional boundaries for personal and sensitive data. In practice, this means that *inference*—not just training—must be *region-aware* and *auditable*. Standard API gateways and monolithic inference servers provide insufficient control: stateless routing can misplace workloads, shared KV-caches can leak prompt context across tenants or countries, and logs often lack the end-to-end traceability needed for compliance attestations.
 
-This paper focuses on **distributed inference** using **llm-d** and **vLLM** on **OpenShift**. We assume a pragmatic goal common to sovereign deployments: **one set of weights per region (same digest, attested provenance)** to keep cost manageable, but **strictly separate KV-caches, routing planes, and observability backends** per jurisdiction. Our scope spans the control plane (routing, policy, admission) and the data plane (prefill/decode, KV-cache reuse, token streaming), with emphasis on operational guardrails and compliance-ready evidence.
+This paper focuses on **distributed inference** using **llm-d** and **vLLM** on **OpenShift**. We assume a pragmatic goal common to sovereign deployments: **one set of weights per region (same digest, attested provenance)** to keep cost manageable, but **strictly separate KV-caches, routing planes, and observability backends** per jurisdiction. Our scope spans the control plane (routing, policy, admission) and the data plane (prefill/decode, KV-cache reuse, token streaming), emphasizing operational guardrails and compliance-ready evidence.
 
 **Key contributions of this paper:**
 - An **EPP-centric**, *no-Redis* architecture for prefix/KV-aware routing.  
@@ -290,7 +289,7 @@ containers:
 
 ## 13. Conclusion
 
-Sovereign AI is not only about where data sits—it is about **how requests move**, **where ephemeral inference state lives**, and **how operators prove compliance** without sacrificing performance. An **EPP-centric** llm-d architecture—eschewing global indexes in favor of *local sketches, policy-driven scoring, and strict region pinning*—yields strong guarantees against cross-region routing and KV leakage. Coupled with **vLLM** for efficient engine-level performance and **OpenShift** for zero-trust and secure supply chain controls, this blueprint enables practical, auditable, and cost-effective sovereign LLM inference across hybrid cloud.
+Sovereign AI is not only about where data sits—it is about **how requests move**, **where ephemeral inference state lives**, and **how operators prove compliance** without sacrificing performance. An **EPP-centric** llm-d architecture—eschewing global indexes in favor of *local sketches, policy-driven scoring, and strict region pinning*—yields strong guarantees against cross-region routing and KV leakage. Coupled with **vLLM** for efficient engine-level performance and **OpenShift** for zero-trust and secure supply chain controls, this blueprint enables practical, auditable, and cost-effective sovereign LLM inference across a hybrid cloud.
 
 ---
 
