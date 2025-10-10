@@ -9,7 +9,7 @@
 
 ## Abstract
 
-As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three standard failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design that avoids a central Redis index—relying instead on gateway-side hashing, lightweight per-pool cache sketches, and policy-driven scoring—to deliver *prefix/KV-aware* routing with firm regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
+As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three standard failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design relying on gateway-side hashing, lightweight per-pool cache sketches, and policy-driven scoring—to deliver *prefix/KV-aware* routing with firm regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
 
 ---
 
@@ -20,7 +20,7 @@ Governments and regulated industries increasingly require that AI systems respec
 This paper focuses on **distributed inference** using **llm-d** and **vLLM** on **OpenShift**. We assume a pragmatic goal common to sovereign deployments: **one set of weights per region (same digest, attested provenance)** to keep cost manageable, but **strictly separate KV-caches, routing planes, and observability backends** per jurisdiction. Our scope spans the control plane (routing, policy, admission) and the data plane (prefill/decode, KV-cache reuse, token streaming), emphasizing operational guardrails and compliance-ready evidence.
 
 **Key contributions of this paper:**
-- An **EPP-centric**, *no-Redis* architecture for prefix/KV-aware routing.  
+- An **EPP-centric**, architecture for prefix/KV-aware routing.  
 - A *defense-in-depth* approach to prevent cross-region routing and KV leakage.  
 - An observability model and SLO set oriented to sovereign AI operations.
 
@@ -59,9 +59,9 @@ OpenShift provides (1) **zero-trust networking** (mTLS, SPIFFE/SPIRE), (2) **sec
 
 ---
 
-## 4. Architectural Overview (EPP-Centric, No Redis)
+## 4. Architectural Overview (EPP-Centric)
 
-We present a design that **eliminates a central Redis prefix index**. Instead, the **EPP** maintains an *in-memory view* of per-pool cache “sketches” (lightweight Bloom filters or top-K hot prefixes) published by each decode pool’s **routing sidecar**. Requests are annotated at the gateway with **normalized prefix hashes**, and the EPP uses *policy-weighted scoring* to select a pool **within the same region** that most likely holds useful KV.
+We present a design that the **EPP** maintains an *in-memory view* of per-pool cache “sketches” (lightweight Bloom filters or top-K hot prefixes) published by each decode pool’s **routing sidecar**. Requests are annotated at the gateway with **normalized prefix hashes**, and the EPP uses *policy-weighted scoring* to select a pool **within the same region** that most likely holds useful KV.
 
 ### 4.1 Design Principles
 - **Locality by default:** No inter-region cache metadata; no global state.  
@@ -267,7 +267,7 @@ containers:
 - 3 OpenShift regions with their own Gateways, EPPs, decode pools, observability stacks.  
 - Gateway URLs: `llm.fr.example.com`, `llm.de.example.com`, `llm.it.example.com`.  
 - EPP policy: `pool.region == req.region` (hard constraint).  
-- Sidecars stream local sketches to EPP; no Redis.  
+- Sidecars stream local sketches to EPP
 - vLLM uses `--enable-prefix-caching --prefix-caching-hash-algo sha256 --block-size 16`.
 
 **Outcomes (representative):**
