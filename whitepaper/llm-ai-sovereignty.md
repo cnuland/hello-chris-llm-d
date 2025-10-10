@@ -81,57 +81,83 @@ We present a design that the **EPP** maintains an *in-memory view* of per-pool c
 ## 5. Sovereign Multi-Region Diagram (Markdown/Mermaid)
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph Client["Client / App"]
-    ClientApp[Client App]
+    ClientApp["Client App"]
   end
 
-  ClientApp -->|HTTPS| GW_FR["Envoy Gateway (FR)"]
-  ClientApp -->|HTTPS| GW_DE["Envoy Gateway (DE)"]
-  ClientApp -->|HTTPS| GW_IT["Envoy Gateway (IT)"]
+  subgraph OpenShiftCluster["Single OpenShift Cluster"]
+    subgraph Gateway["Gateway Layer"]
+      GW_MAIN["Istio/Envoy Gateway"]
+    end
 
-  subgraph FR_Region["France Region (OpenShift)"]
-    GW_FR -->|ext-proc| EPP_FR["EPP FR"]
-    EPP_FR -->|route| DEC_FR1["vLLM Decode Pool FR-1"]
-    EPP_FR -->|route| DEC_FR2["vLLM Decode Pool FR-2"]
-    DEC_FR1 <-->|sketch| EPP_FR
-    DEC_FR2 <-->|sketch| EPP_FR
+    subgraph FR_Region["France Region (Namespace: fr-llm)"]
+      EPP_FR["EPP FR"]
+      DEC_FR1["vLLM Decode Pool FR-1"]
+      DEC_FR2["vLLM Decode Pool FR-2"]
+      WEIGHTS_FR[("Model Weights FR")]
+      
+      EPP_FR -->|route| DEC_FR1
+      EPP_FR -->|route| DEC_FR2
+      DEC_FR1 <-->|sketch| EPP_FR
+      DEC_FR2 <-->|sketch| EPP_FR
+      WEIGHTS_FR --> DEC_FR1
+      WEIGHTS_FR --> DEC_FR2
+    end
+
+    subgraph DE_Region["Germany Region (Namespace: de-llm)"]
+      EPP_DE["EPP DE"]
+      DEC_DE1["vLLM Decode Pool DE-1"]
+      DEC_DE2["vLLM Decode Pool DE-2"]
+      WEIGHTS_DE[("Model Weights DE")]
+      
+      EPP_DE -->|route| DEC_DE1
+      EPP_DE -->|route| DEC_DE2
+      DEC_DE1 <-->|sketch| EPP_DE
+      DEC_DE2 <-->|sketch| EPP_DE
+      WEIGHTS_DE --> DEC_DE1
+      WEIGHTS_DE --> DEC_DE2
+    end
+
+    subgraph IT_Region["Italy Region (Namespace: it-llm)"]
+      EPP_IT["EPP IT"]
+      DEC_IT1["vLLM Decode Pool IT-1"]
+      DEC_IT2["vLLM Decode Pool IT-2"]
+      WEIGHTS_IT[("Model Weights IT")]
+      
+      EPP_IT -->|route| DEC_IT1
+      EPP_IT -->|route| DEC_IT2
+      DEC_IT1 <-->|sketch| EPP_IT
+      DEC_IT2 <-->|sketch| EPP_IT
+      WEIGHTS_IT --> DEC_IT1
+      WEIGHTS_IT --> DEC_IT2
+    end
+
+    subgraph NetworkPolicies["Network Isolation"]
+      NP_FR["NetworkPolicy: fr-llm"]
+      NP_DE["NetworkPolicy: de-llm"]
+      NP_IT["NetworkPolicy: it-llm"]
+    end
   end
 
-  subgraph DE_Region["Germany Region (OpenShift)"]
-    GW_DE -->|ext-proc| EPP_DE["EPP DE"]
-    EPP_DE -->|route| DEC_DE1["vLLM Decode Pool DE-1"]
-    EPP_DE -->|route| DEC_DE2["vLLM Decode Pool DE-2"]
-    DEC_DE1 <-->|sketch| EPP_DE
-    DEC_DE2 <-->|sketch| EPP_DE
-  end
+  ClientApp -->|"HTTPS (region=FR)"| GW_MAIN
+  ClientApp -->|"HTTPS (region=DE)"| GW_MAIN
+  ClientApp -->|"HTTPS (region=IT)"| GW_MAIN
+  
+  GW_MAIN -->|"ext-proc (FR requests)"| EPP_FR
+  GW_MAIN -->|"ext-proc (DE requests)"| EPP_DE
+  GW_MAIN -->|"ext-proc (IT requests)"| EPP_IT
 
-  subgraph IT_Region["Italy Region (OpenShift)"]
-    GW_IT -->|ext-proc| EPP_IT["EPP IT"]
-    EPP_IT -->|route| DEC_IT1["vLLM Decode Pool IT-1"]
-    EPP_IT -->|route| DEC_IT2["vLLM Decode Pool IT-2"]
-    DEC_IT1 <-->|sketch| EPP_IT
-    DEC_IT2 <-->|sketch| EPP_IT
-  end
-
-  subgraph Shared["Per-Region Artifact Store (Same Model Digest)"]
-    WEIGHTS_FR[("Model Weights FR")]
-    WEIGHTS_DE[("Model Weights DE")]
-    WEIGHTS_IT[("Model Weights IT")]
-  end
-
-  WEIGHTS_FR --> DEC_FR1
-  WEIGHTS_FR --> DEC_FR2
-  WEIGHTS_DE --> DEC_DE1
-  WEIGHTS_DE --> DEC_DE2
-  WEIGHTS_IT --> DEC_IT1
-  WEIGHTS_IT --> DEC_IT2
+  %% Network isolation - no cross-region communication
+  NP_FR -.->|"blocks cross-region"| FR_Region
+  NP_DE -.->|"blocks cross-region"| DE_Region
+  NP_IT -.->|"blocks cross-region"| IT_Region
 
   %% No cross-region lines between EPPs, pools, or KV.
-  %% KV cache remains local to each region's decode pools.
+  %% KV cache remains local to each region's decode pools within the cluster.
 ```
 
-**Reading the diagram:** Each region has an Envoy Gateway and an EPP. Decode pools stream *local* cache sketches to their EPP only. **No cross-region** cache metadata or KV transfer exists. The same model weights (same hash/digest, separately mirrored) are loaded per region.
+**Reading the diagram:** Within a single OpenShift cluster, each sovereign region is isolated using Kubernetes namespaces and NetworkPolicies. A shared gateway routes requests to the appropriate regional EPP based on region metadata. Decode pools stream *local* cache sketches to their regional EPP only. **No cross-region** cache metadata or KV transfer exists within the cluster. The same model weights (same hash/digest, separately stored per namespace) are loaded per region, ensuring complete isolation despite sharing cluster infrastructure.
 
 ---
 
