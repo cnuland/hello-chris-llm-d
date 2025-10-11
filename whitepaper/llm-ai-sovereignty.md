@@ -305,16 +305,7 @@ containers:
 
 ---
 
-## 12. Discussion and Limitations
-
-- **Why no Redis?** Removing a central index reduces operational and compliance risk; cache indexes + optional probes strike a balance between accuracy and simplicity.  
-- **Trade-off:** Cache locality is regional rather than global; this is a *feature* in sovereignty scenarios.  
-- **Large MoE models:** llm-d can compose with vLLM’s distributed features (TP/PP; EP/DP where applicable). Keep expert/gating traffic intra-region.  
-- **Future:** Policy-as-code integration (OPA/Gatekeeper) for EPP constraints; confidential compute and attested enclaves for routing plane components.
-
----
-
-## 13. Conclusion
+## 12. Conclusion
 
 Sovereign AI is not only about where data sits—it is about **how requests move**, **where ephemeral inference state lives**, and **how operators prove compliance** without sacrificing performance. An **EPP-centric** llm-d architecture—eschewing global indexes in favor of *local cache indexes, policy-driven scoring, and strict region pinning*—yields strong guarantees against cross-region routing and KV leakage. Coupled with **vLLM** for efficient engine-level performance and **OpenShift** for zero-trust and secure supply chain controls, this blueprint enables practical, auditable, and cost-effective sovereign LLM inference across a hybrid cloud.
 
