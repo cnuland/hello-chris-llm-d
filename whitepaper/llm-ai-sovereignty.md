@@ -9,7 +9,7 @@
 
 ## Abstract
 
-As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three standard failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design relying on gateway-side hashing, lightweight per-pool cache sketches, and policy-driven scoring—to deliver *prefix/KV-aware* routing with firm regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
+As large language models (LLMs) become critical infrastructure, enterprises and public-sector organizations must reconcile *AI sovereignty* requirements with the operational realities of hybrid cloud. Sovereignty is not only about data residency; it also encompasses *routing isolation*, *inference state hygiene*, and *provable auditability* across regions and tenants. This white paper presents a Kubernetes-native architecture using **llm-d** (Large Language Model Disaggregator) and **vLLM** on **Red Hat OpenShift** that prevents three standard failure modes in sovereign environments: (1) *accidental cross-region routing*, (2) *KV-cache leakage across jurisdictions or tenants*, and (3) *auditing gaps that hinder compliance evidence*. We describe an **EPP-centric** (External Processing Pod) design relying on gateway-side hashing, lightweight per-pool cache indexes, and policy-driven scoring—to deliver *prefix/KV-aware* routing with firm regional boundaries and deep observability. The paper includes an implementation blueprint, operational SLOs, and a regionally compliant logging and tracing approach aligned to OpenShift’s zero-trust and secure supply chain controls.
 
 ---
 
@@ -61,18 +61,18 @@ OpenShift provides (1) **zero-trust networking** (mTLS, SPIFFE/SPIRE), (2) **sec
 
 ## 4. Architectural Overview (EPP-Centric)
 
-We present a design that the **EPP** maintains an *in-memory view* of per-pool cache “sketches” (lightweight Bloom filters or top-K hot prefixes) published by each decode pool’s **routing sidecar**. Requests are annotated at the gateway with **normalized prefix hashes**, and the EPP uses *policy-weighted scoring* to select a pool **within the same region** that most likely holds useful KV.
+We present a design that the **EPP** maintains an *in-memory view* of per-pool cache “cache indexes” (lightweight Bloom filters or top-K hot prefixes) published by each decode pool’s **routing sidecar**. Requests are annotated at the gateway with **normalized prefix hashes**, and the EPP uses *policy-weighted scoring* to select a pool **within the same region** that most likely holds useful KV.
 
 ### 4.1 Design Principles
 - **Locality by default:** No inter-region cache metadata; no global state.  
-- **Probabilistic but confirmable:** Sketches reduce overhead; optional *pre-route probes* confirm a match.  
+- **Probabilistic but confirmable:** Cache indexes reduce overhead; optional *pre-route probes* confirm a match.  
 - **Policy first:** Region pinning, tenant isolation, and SLO class are *hard constraints*; KV affinity is an optimization.  
 - **Composable:** Works alongside vLLM (prefix caching) and OpenShift (network and identity controls) without custom forks.
 
 ### 4.2 Primary Components (Logical)
 - **Envoy + Gateway API:** Normalizes requests, computes prefix block hashes (aligned to vLLM block size), calls **EPP** via ext-proc.  
-- **EPP (External Processing Pod):** Applies **region/tenant constraints**, evaluates **cache-sketch** and **load/SLO scorers**, optionally probes a candidate, returns route.  
-- **Routing Sidecar (per decode pod):** Streams *cache sketches* (and health/epoch) to the EPP over gRPC; handles optional “has-prefix?” probe.  
+- **EPP (External Processing Pod):** Applies **region/tenant constraints**, evaluates **cache-index** and **load/SLO scorers**, optionally probes a candidate, returns route.  
+- **Routing Sidecar (per decode pod):** Streams *cache indexes* (and health/epoch) to the EPP over gRPC; handles optional “has-prefix?” probe.  
 - **vLLM Worker:** Executes inference with **prefix caching**, **PagedAttention**, **continuous batching**; KV lives and dies in-pod (or local shared memory), never crossing regions.  
 - **Observability Stack:** Prometheus + OpenTelemetry + Grafana/Tempo, with **region/tenant/pool labels** everywhere.
 
@@ -99,8 +99,8 @@ flowchart TB
       
       EPP_FR -->|route| DEC_FR1
       EPP_FR -->|route| DEC_FR2
-      DEC_FR1 <-->|sketch| EPP_FR
-      DEC_FR2 <-->|sketch| EPP_FR
+      DEC_FR1 <-->|cache index| EPP_FR
+      DEC_FR2 <-->|cache index| EPP_FR
       WEIGHTS_FR --> DEC_FR1
       WEIGHTS_FR --> DEC_FR2
     end
@@ -113,8 +113,8 @@ flowchart TB
       
       EPP_DE -->|route| DEC_DE1
       EPP_DE -->|route| DEC_DE2
-      DEC_DE1 <-->|sketch| EPP_DE
-      DEC_DE2 <-->|sketch| EPP_DE
+      DEC_DE1 <-->|cache index| EPP_DE
+      DEC_DE2 <-->|cache index| EPP_DE
       WEIGHTS_DE --> DEC_DE1
       WEIGHTS_DE --> DEC_DE2
     end
@@ -127,8 +127,8 @@ flowchart TB
       
       EPP_IT -->|route| DEC_IT1
       EPP_IT -->|route| DEC_IT2
-      DEC_IT1 <-->|sketch| EPP_IT
-      DEC_IT2 <-->|sketch| EPP_IT
+      DEC_IT1 <-->|cache index| EPP_IT
+      DEC_IT2 <-->|cache index| EPP_IT
       WEIGHTS_IT --> DEC_IT1
       WEIGHTS_IT --> DEC_IT2
     end
@@ -157,7 +157,7 @@ flowchart TB
   %% KV cache remains local to each region's decode pools within the cluster.
 ```
 
-**Reading the diagram:** Within a single OpenShift cluster, each sovereign region is isolated using Kubernetes namespaces and NetworkPolicies. A shared gateway routes requests to the appropriate regional EPP based on region metadata. Decode pools stream *local* cache sketches to their regional EPP only. **No cross-region** cache metadata or KV transfer exists within the cluster. The same model weights (same hash/digest, separately stored per namespace) are loaded per region, ensuring complete isolation despite sharing cluster infrastructure.
+**Reading the diagram:** Within a single OpenShift cluster, each sovereign region is isolated using Kubernetes namespaces and NetworkPolicies. A shared gateway routes requests to the appropriate regional EPP based on region metadata. Decode pools stream *local* cache indexes to their regional EPP only. **No cross-region** cache metadata or KV transfer exists within the cluster. The same model weights (same hash/digest, separately stored per namespace) are loaded per region, ensuring complete isolation despite sharing cluster infrastructure.
 
 ---
 
@@ -169,13 +169,13 @@ flowchart TB
 
 ### 6.2 Policy-Driven Scoring
 Within the region, the EPP scores candidates by:
-- **prefix_sketch score** (probabilistic overlap between request prefix hashes and local sketches),  
+- **prefix_cache_index score** (probabilistic overlap between request prefix hashes and local cache indexes),  
 - **load score** (queue depth, GPU headroom, historical TTFT/TPOT),  
 - **SLO class weight** (latency budgets by tier),  
 - **optional confirm**: “has-prefix?” probe to the best candidate (fast gRPC sidecar check) to avoid false positives.
 
 ### 6.3 Failure Handling
-- **Stale sketches** lower confidence; the EPP gracefully falls back to *load/SLO-only* routing within the region.  
+- **Stale cache indexes** lower confidence; the EPP gracefully falls back to *load/SLO-only* routing within the region.  
 - **Gateway retries** stay in-region by policy; no cross-region fallback is permitted unless explicitly configured for *legal equivalence zones* (e.g., EU-only).
 
 ---
@@ -186,9 +186,9 @@ Within the region, the EPP scores candidates by:
 - KV blocks reside in the **vLLM pod memory** or node-local shared memory—never replicated beyond the region.  
 - **No side-channel** for KV transfer across regions; intra-region P/D disaggregation is permitted but constrained by NetworkPolicy.
 
-### 7.2 Sketches, Not State
-- Routing sidecars export **compact sketches** (e.g., Bloom/top-K) of *what* is cached, not the cache content.  
-- Sketch streams are **confined in-region** (service mesh policies), and carry **short TTLs** to avoid stale routing.
+### 7.2 Cache indexes, Not State
+- Routing sidecars export **compact cache indexes** (e.g., Bloom/top-K) of *what* is cached, not the cache content.  
+- Cache index streams are **confined in-region** (service mesh policies), and carry **short TTLs** to avoid stale routing.
 
 ### 7.3 Namespaces and Pools
 - Each jurisdiction uses dedicated **namespaces**, **service accounts**, **NetworkPolicies**, and **SCC profiles**.  
@@ -199,7 +199,7 @@ Within the region, the EPP scores candidates by:
 ## 8. Closing Auditing Gaps
 
 ### 8.1 Decision Trails
-- The EPP logs **inputs → scores → selected pool** with `region`, `tenant`, `slo_class`, `sketch_confidence`, and *probe result* when used.  
+- The EPP logs **inputs → scores → selected pool** with `region`, `tenant`, `slo_class`, `cache_index_confidence`, and *probe result* when used.  
 - Each Envoy ext-proc call carries a **correlation ID** propagated into OTel spans.
 
 ### 8.2 Sovereign Observability
@@ -238,7 +238,7 @@ epp:
     - type: region_pin
       rule: "pool.region == req.region"
   scorers:
-    - name: prefix_sketch
+    - name: prefix_cache_index
       weight: 1.5
       config: { ttl_ms: 1500, confirm_probe: true }
     - name: load
@@ -252,8 +252,8 @@ epp:
 containers:
 - name: routing-sidecar
   image: ghcr.io/llm-d/llm-d-routing-sidecar:latest
-  args: ["--export-sketch", "--export-interval=500ms",
-         "--epp-grpc=epp.fr.svc:9002", "--sketch-type=bloom",
+  args: ["--export-cache-index", "--export-interval=500ms",
+         "--epp-grpc=epp.fr.svc:9002", "--cache-index-type=bloom",
          "--hash=sha256", "--block-size=16"]
 - name: vllm
   image: ghcr.io/llm-d/llm-d:vX.Y.Z
@@ -279,7 +279,7 @@ containers:
 
 ### 10.2 Alerts and Runbook Steps
 - **Cross-Region Violation Alert:** trigger when any route decision logs `pool.region != req.region` (should be impossible under constraints).  
-- **Sketch Staleness:** alert when `sketch_age_seconds > ttl_ms`; EPP will down-weight prefix scorer automatically.  
+- **Cache Index Staleness:** alert when `cache_index_age_seconds > ttl_ms`; EPP will down-weight prefix scorer automatically.  
 - **Cache Fragmentation:** falling hit ratio → consider traffic shaping or prompt templates per tenant to improve locality.  
 - **GPU Headroom:** proactive autoscale based on queue depth + GPU mem headroom to keep TTFT within SLO.
 
@@ -294,7 +294,7 @@ containers:
 - 3 OpenShift regions with their own Gateways, EPPs, decode pools, observability stacks.  
 - Gateway URLs: `llm.fr.example.com`, `llm.de.example.com`, `llm.it.example.com`.  
 - EPP policy: `pool.region == req.region` (hard constraint).  
-- Sidecars stream local sketches to EPP
+- Sidecars stream local cache indexes to EPP
 - vLLM uses `--enable-prefix-caching --prefix-caching-hash-algo sha256 --block-size 16`.
 
 **Outcomes (representative):**
@@ -307,7 +307,7 @@ containers:
 
 ## 12. Discussion and Limitations
 
-- **Why no Redis?** Removing a central index reduces operational and compliance risk; sketches + optional probes strike a balance between accuracy and simplicity.  
+- **Why no Redis?** Removing a central index reduces operational and compliance risk; cache indexes + optional probes strike a balance between accuracy and simplicity.  
 - **Trade-off:** Cache locality is regional rather than global; this is a *feature* in sovereignty scenarios.  
 - **Large MoE models:** llm-d can compose with vLLM’s distributed features (TP/PP; EP/DP where applicable). Keep expert/gating traffic intra-region.  
 - **Future:** Policy-as-code integration (OPA/Gatekeeper) for EPP constraints; confidential compute and attested enclaves for routing plane components.
@@ -316,7 +316,7 @@ containers:
 
 ## 13. Conclusion
 
-Sovereign AI is not only about where data sits—it is about **how requests move**, **where ephemeral inference state lives**, and **how operators prove compliance** without sacrificing performance. An **EPP-centric** llm-d architecture—eschewing global indexes in favor of *local sketches, policy-driven scoring, and strict region pinning*—yields strong guarantees against cross-region routing and KV leakage. Coupled with **vLLM** for efficient engine-level performance and **OpenShift** for zero-trust and secure supply chain controls, this blueprint enables practical, auditable, and cost-effective sovereign LLM inference across a hybrid cloud.
+Sovereign AI is not only about where data sits—it is about **how requests move**, **where ephemeral inference state lives**, and **how operators prove compliance** without sacrificing performance. An **EPP-centric** llm-d architecture—eschewing global indexes in favor of *local cache indexes, policy-driven scoring, and strict region pinning*—yields strong guarantees against cross-region routing and KV leakage. Coupled with **vLLM** for efficient engine-level performance and **OpenShift** for zero-trust and secure supply chain controls, this blueprint enables practical, auditable, and cost-effective sovereign LLM inference across a hybrid cloud.
 
 ---
 
